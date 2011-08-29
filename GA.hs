@@ -96,7 +96,7 @@ class ShowEntity a where
 
 -- |Show a scored entity.
 showScoredEntity :: ShowEntity a => ScoredEntity a -> String
-showScoredEntity (score,e) = "(" ++ show score ++ ", " ++ showEntity e ++ ")"
+showScoredEntity (theScore,e) = "(" ++ show theScore ++ ", " ++ showEntity e ++ ")"
 
 -- |Show a list of scored entities.
 showScoredEntities :: ShowEntity a => [ScoredEntity a] -> String
@@ -111,7 +111,7 @@ initPop src n seeds = (seeds'', entities)
 
 -- |Score an entity (if it hasn't been already).
 scoreEnt :: (Entity a b c) => b -> ScoredEntity a -> ScoredEntity a
-scoreEnt d e@(Just _,_) = e
+scoreEnt _ e@(Just _,_) = e
 scoreEnt d (Nothing,x) = (Just $ score x d, x)
 
 -- |Binary tournament selection operator.
@@ -186,7 +186,7 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                     else restoreFromCheckpoint cfg genSeeds
   where
     fn = chkptFileName cfg (gi,seed)
-restoreFromCheckpoint cfg [] = return Nothing
+restoreFromCheckpoint _ [] = return Nothing
 
 -- |Checkpoint a single generation.
 checkpointGen :: (Entity a b c) => GAConfig -> Int -> Int -> ScoredGen a -> IO()
@@ -216,9 +216,9 @@ evolution cfg (pop,archive) step ((gi,seed):gss) = do
                                                         return newPa
                                                 else evolution cfg newPa step gss
 -- no more gen. indices/seeds => quit
-evolution cfg (pop,archive) _              []    = do 
-                                                      putStrLn $ "done evolving!"
-                                                      return (pop,archive)
+evolution _ (pop,archive) _              []    = do 
+                                                   putStrLn $ "done evolving!"
+                                                   return (pop,archive)
  
 -- |Do the evolution!
 evolve :: (Entity a b c) => StdGen -> GAConfig -> c -> b -> IO a
@@ -255,7 +255,7 @@ evolve g cfg src dataset = do
                                           else dbg (if checkpointing then "no checkpoint found...\n\n"
                                                                        else "checkpoints ignored...\n\n") 
                                                          (-1, (zip (repeat Nothing) pop, []))
-                (resPop,resArchive) <- evolution cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) (filter ((>gi) . fst) genSeeds)
+                (_,resArchive) <- evolution cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) (filter ((>gi) . fst) genSeeds)
                 
                 if null resArchive
                   then error $ "(evolve) empty archive!"
