@@ -1,0 +1,38 @@
+name:                GA
+version:             0.1
+synopsis:            Genetic algorithm library
+license:             BSD3
+license-file:        LICENSE
+author:              Kenneth Hoste
+maintainer:          kenneth.hoste@gmail.com
+copyright:           (c) 2011 Kenneth Hoste
+homepage:            http://boegel.kejo.be
+bug-reports:         mailto:kenneth.hoste@gmail.com
+category:            AI, Algorithms, Optimisation
+stability:           Experimental
+build-type:          Simple
+cabal-version:       >= 1.6
+description:
+  This package provides a framework for working with genetic
+  algorithms. A genetic algorithm is an evolutionary technique, 
+  inspired by biological evolution, to evolve entities that perform
+  as good as possible in terms of a predefined criterion (the scoring 
+  function). Note: lower scores are assumed to indicate better entities.
+  The GA module provides a type class for defining entities and the
+  functions that are required by the genetic algorithm.
+  Checkpointing in between generations is available, as is automatic
+  restoring from the last available checkpoint. 
+
+Library
+  exposed-modules:
+     GA
+  extra-source-files:  example1.hs example2.hs Makefile
+  build-depends:       base >= 4 & < 5, directory, random
+
+extensions:          FunctionalDependencies, MultiParamTypeClasses
+tested-with:         GHC==6.12.1
+ghc-options:         -Wall -O2
+
+source-repository head
+  type: git
+  location: git://github.com/boegel/GA.git

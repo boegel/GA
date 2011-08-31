@@ -1,0 +1,63 @@
+GA, a Haskell module for working with genetic algorithms
+---------------------------------------------------------
+
+Aug. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
+see http://hackage.haskell.org/package/GA
+
+* DESCRIPTION
+
+This package provides a framework for working with genetic
+algorithms. A genetic algorithm is an evolutionary technique, 
+inspired by biological evolution, to evolve entities that perform
+as good as possible in terms of a predefined criterion (the scoring 
+function). 
+Note: lower scores are assumed to indicate better entities.
+
+The GA module provides a type class for defining entities and the
+functions that are required by the genetic algorithm.
+
+Checkpointing in between generations is available, as is automatic
+restoring from the last available checkpoint. 
+
+* BUILDING AND USING
+
+Building the GA module and supplied examples can be done by running 'make'.
+
+Using the GA module should be clear after studying the examples.
+
+* EXAMPLES
+
+This release includes two toy examples that show how to use the GA module.
+
+A first example evolves the string "Hello World!". The string that the
+genetic algorithm should generate is supplied by the user in this example,
+which is of course not representative of a real world problem that could 
+be solved using genetic algorithms. However, it does serve well as a toy 
+example.
+
+The code in example1.hs illustrates how you can define the 'genRandom', 
+'crossover', 'mutation' and 'score' functions that are required to run 
+the genetic algorithm using the 'evolve' function.
+
+It also shows the use of a 'pool' that can be used to generate random
+entities (a list of characters, in this particular case), and user-supplied
+data that can be used to evaluate the fitness of entities (in this case,
+the string "Hello World!").
+
+Example command line:
+
+	./example1 100 25 200 0.8 0.2 0.0 0.2 False +RTS -M1G
+
+The second example (see example2.hs) evolves an integer number that has
+8 integer divisors, and for which the sum of its divisors equals 96.
+Although using a genetic algorithm is probably not the best way to find 
+such an integer (it would be easier/faster to just go over integer values
+one by one starting from e.g. 8), but again, it serves well as a toy example.
+
+This example shows how the pool and score data do not have to be used; it
+suffices to supply '()' as values to the evolve function, and to simply ignore
+the respective arguments passed to the Entity typeclass functions.
+
+Example command line:
+
+	./example2 20 10 100 0.8 0.2 0.0 0.2 False +RTS -M1G 
