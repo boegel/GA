@@ -22,15 +22,15 @@ Description:
   functions that are required by the genetic algorithm.
   Checkpointing in between generations is available, as is automatic
   restoring from the last available checkpoint. 
+  
+Extra-source-files:  example1.hs, example2.hs, Makefile
+Tested-with:         GHC==6.12.1
 
 Library
   exposed-modules:     GA
   extensions:          FunctionalDependencies, MultiParamTypeClasses
-  ghc-options:         -Wall -O2
+  ghc-options:         -Wall
   build-depends:       base >= 4 && < 5, directory, random
-
-Extra-source-files:  example1.hs, example2.hs, Makefile
-Tested-with:         GHC==6.12.1
 
 source-repository head
   type: git
