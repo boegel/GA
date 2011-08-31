@@ -1,7 +1,7 @@
-GA, a Haskell module for working with genetic algorithms
+GA, a Haskell library for working with genetic algorithms
 ---------------------------------------------------------
 
-Aug. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
+version 0.1, Aug. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
 see http://hackage.haskell.org/package/GA
 
 * DESCRIPTION
@@ -44,9 +44,9 @@ entities (a list of characters, in this particular case), and user-supplied
 data that can be used to evaluate the fitness of entities (in this case,
 the string "Hello World!").
 
-Example command line:
+Example command line (with checkpointing enabled):
 
-	./example1 100 25 200 0.8 0.2 0.0 0.2 False +RTS -M1G
+	./example1 100 25 200 0.8 0.2 0.0 0.2 True +RTS -M1G
 
 The second example (see example2.hs) evolves an integer number that has
 8 integer divisors, and for which the sum of its divisors equals 96.

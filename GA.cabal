@@ -1,18 +1,18 @@
-name:                GA
-version:             0.1
-synopsis:            Genetic algorithm library
-license:             BSD3
-license-file:        LICENSE
-author:              Kenneth Hoste
-maintainer:          kenneth.hoste@gmail.com
-copyright:           (c) 2011 Kenneth Hoste
-homepage:            http://boegel.kejo.be
-bug-reports:         mailto:kenneth.hoste@gmail.com
-category:            AI, Algorithms, Optimisation
-stability:           Experimental
-build-type:          Simple
-cabal-version:       >= 1.6
-description:
+Name:                GA
+Version:             0.1
+Synopsis:            Genetic algorithm library
+License:             BSD3
+License-file:        LICENSE
+Author:              Kenneth Hoste
+Maintainer:          kenneth.hoste@gmail.com
+Copyright:           (c) 2011 Kenneth Hoste
+Homepage:            http://boegel.kejo.be
+Bug-reports:         mailto:kenneth.hoste@gmail.com
+Category:            AI, Algorithms, Optimisation
+Stability:           Experimental
+Build-type:          Simple
+Cabal-version:       >= 1.6
+Description:
   This package provides a framework for working with genetic
   algorithms. A genetic algorithm is an evolutionary technique, 
   inspired by biological evolution, to evolve entities that perform
@@ -24,14 +24,13 @@ description:
   restoring from the last available checkpoint. 
 
 Library
-  exposed-modules:
-     GA
-  extra-source-files:  example1.hs example2.hs Makefile
-  build-depends:       base >= 4 & < 5, directory, random
+  exposed-modules:     GA
+  extensions:          FunctionalDependencies, MultiParamTypeClasses
+  ghc-options:         -Wall -O2
+  build-depends:       base >= 4 && < 5, directory, random
 
-extensions:          FunctionalDependencies, MultiParamTypeClasses
-tested-with:         GHC==6.12.1
-ghc-options:         -Wall -O2
+Extra-source-files:  example1.hs, example2.hs, Makefile
+Tested-with:         GHC==6.12.1
 
 source-repository head
   type: git

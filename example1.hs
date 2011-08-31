@@ -9,7 +9,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-import GA
+import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
 import Data.Char (chr,ord)
 import Data.List (foldl')
 import System (getArgs,getProgName)
