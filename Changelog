@@ -1,0 +1,11 @@
+Changelog for GA, a Haskell library for working with genetic algorithms:
+------------------------------------------------------------------------
+
+v0.1 (Aug. 31st 2011):
+
+* initial release
+* support for:
+	- evolution of arbitrary entities (see Entity type class)
+	- checkpointing between generations with automatic restore from checkpoint
+* two toy examples
+
