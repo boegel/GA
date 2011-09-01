@@ -11,8 +11,7 @@
 
 import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
 import Data.List (foldl')
-import Debug.Trace
-import System (getArgs,getProgName)
+import System (getArgs)
 import System.Random (mkStdGen, random)
 
 --
@@ -21,9 +20,9 @@ import System.Random (mkStdGen, random)
 
 -- find all divisors of a number
 divisors :: Int -> [Int]
-divisors n = concat $ map (divsFor n) [1..(sqrt' n)]
+divisors n = concat $ map divsFor [1..(sqrt' n)]
   where
-    divsFor n x = if n `mod` x == 0
+    divsFor x = if n `mod` x == 0
                      then [x, n `div` x]
                      else []
 
@@ -65,33 +64,33 @@ instance Entity Int () () where
 
 instance ShowEntity Int where 
   showEntity = show
- 
+
+main :: IO() 
 main = do
         args <- getArgs
-        progName <- getProgName
         if length args /= 8 
            then error $ "Usage: <pop. size> <archive size> <max. # generations> " ++
                                "<crossover rate> <mutation rate> " ++
                                "<crossover parameter> <mutation parameter> " ++
                                "<enable checkpointing (bool)>"
            else return ()
-        let popSize       = read $ args !! 0
-            archiveSize   = read $ args !! 1
-            maxGens       = read $ args !! 2
-            crossoverRate = read $ args !! 3
-            mutationRate  = read $ args !! 4
-            crossoverPar  = read $ args !! 5
-            mutationPar   = read $ args !! 6
-            checkpointing = read $ args !! 7
+        let ps  = read $ args !! 0
+            as  = read $ args !! 1
+            mg  = read $ args !! 2
+            cr  = read $ args !! 3
+            mr  = read $ args !! 4
+            cp  = read $ args !! 5
+            mp  = read $ args !! 6
+            chk = read $ args !! 7
         let cfg = GAConfig 
-                    popSize -- population size
-                    archiveSize -- archive size (best entities to keep track of)
-                    maxGens -- maximum number of generations
-                    crossoverRate -- crossover rate (% of new entities generated with crossover)
-                    mutationRate -- mutation rate (% of new entities generated with mutation)
-                    crossoverPar -- parameter for crossover operator (not used here)
-                    mutationPar -- parameter for mutation operator (ratio of replaced letters)
-                    checkpointing -- whether or not to use checkpointing
+                    ps -- population size
+                    as -- archive size (best entities to keep track of)
+                    mg -- maximum number of generations
+                    cr -- crossover rate (% of new entities generated with crossover)
+                    mr -- mutation rate (% of new entities generated with mutation)
+                    cp -- parameter for crossover operator (not used here)
+                    mp -- parameter for mutation operator (ratio of replaced letters)
+                    chk -- whether or not to use checkpointing
 
             g = mkStdGen 0 -- random generator
 

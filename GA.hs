@@ -96,7 +96,7 @@ class ShowEntity a where
 
 -- |Show a scored entity.
 showScoredEntity :: ShowEntity a => ScoredEntity a -> String
-showScoredEntity (theScore,e) = "(" ++ show theScore ++ ", " ++ showEntity e ++ ")"
+showScoredEntity (s,e) = "(" ++ show s ++ ", " ++ showEntity e ++ ")"
 
 -- |Show a list of scored entities.
 showScoredEntities :: ShowEntity a => [ScoredEntity a] -> String
