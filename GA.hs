@@ -3,9 +3,9 @@
 
 -- |GA, a Haskell library for working with genetic algoritms
 --
--- Aug. 2011, by Kenneth Hoste
+-- Aug. 2011 - Sept. 2011, by Kenneth Hoste
 --
--- version: 0.1
+-- version: 0.2
 module GA (Entity(..), 
            GAConfig(..), 
            ShowEntity(..), 

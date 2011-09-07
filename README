@@ -1,7 +1,7 @@
 GA, a Haskell library for working with genetic algorithms
 ---------------------------------------------------------
 
-version 0.1, Aug. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
+version 0.2, Sept. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
 see http://hackage.haskell.org/package/GA
 
 * DESCRIPTION
@@ -17,7 +17,7 @@ The GA module provides a type class for defining entities and the
 functions that are required by the genetic algorithm.
 
 Checkpointing in between generations is available, as is automatic
-restoring from the last available checkpoint. 
+restoring from the last available checkpoint (see evolveChkpt). 
 
 * BUILDING AND USING
 
