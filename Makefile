@@ -1,7 +1,7 @@
-all: example1 example2
+all: example1 example2 example3
 
 %: GA.hs %.hs
 	ghc --make -Wall $@
 
 clean:
-	rm -f *.hi *.o example1 example2
+	rm -f *.hi *.o example1 example2 example3

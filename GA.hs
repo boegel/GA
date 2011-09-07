@@ -9,8 +9,10 @@
 module GA (Entity(..), 
            GAConfig(..), 
            ShowEntity(..), 
-           evolve) where
+           evolve, 
+           evolveChkpt) where
 
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.List (intersperse, sortBy, nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Ord (comparing)
@@ -82,9 +84,10 @@ class (Eq e, Read e, Show e, ShowEntity e, Monad m) => Entity e d p m | e -> d, 
   mutation :: p -> Float -> Int -> e -> Maybe e
   -- |Score an entity (lower is better).
   score' :: e -> d -> Double -- ^ pure
+  score' _ _ = undefined
   score :: e -> d -> m Double -- ^ monadic
-  score x y = do 
-                 let s = score' x y
+  score e d = do 
+                 let s = score' e d
                  return s
 
 -- |A possibly scored entity.
@@ -170,6 +173,17 @@ evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) =
                                     ++ (replicate 150 '='))
                              (pop',archive')
 
+-- |Evolution: evaluate generation and continue.
+evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolution cfg (pop,archive) step ((gi,seed):gss) = do
+                                                     newPa@(_,archive') <- step (pop,archive) (gi,seed) 
+                                                     let (Just fitness, _) = head archive'
+                                                     if fitness == 0.0
+                                                        then return newPa
+                                                        else evolution cfg newPa step gss
+-- no more gen. indices/seeds => quit
+evolution _ (pop,archive) _              []    = return (pop,archive)
+
 -- |Generate file name for checkpoint.
 chkptFileName :: GAConfig -> (Int,Int) -> FilePath
 chkptFileName cfg (gi,seed) = dbg fn fn
@@ -181,6 +195,80 @@ chkptFileName cfg (gi,seed) = dbg fn fn
              (show $ crossoverParam cfg) ++ "-" ++
              (show $ mutationParam cfg)
     fn = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi) ++ "-seed-" ++ (show seed) ++ ".chk"
+
+-- |Checkpoint a single generation.
+checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> ScoredGen e -> IO()
+checkpointGen cfg index seed (pop,archive) = do
+                                           let txt = show $ (pop,archive)
+                                               fn = chkptFileName cfg (index,seed)
+                                           if debug 
+                                              then putStrLn $ "writing checkpoint for gen " ++ (show index) ++ " to " ++ fn
+                                              else return ()
+                                           createDirectoryIfMissing True "checkpoints"
+                                           writeFile fn txt
+
+-- |Evolution: evaluate generation, (maybe) checkpoint, continue.
+evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
+                                                          newPa@(_,archive') <- step (pop,archive) (gi,seed)
+                                                          let (Just fitness, e) = head archive'
+                                                          -- checkpoint generation if desired
+                                                          liftIO $ if (withCheckpointing cfg)
+                                                                      then checkpointGen cfg gi seed newPa
+                                                                      else return () -- skip checkpoint
+                                                          liftIO $ putStrLn $ "best entity (gen. " ++ show gi ++ "): " ++ (show e) ++ " [fitness: " ++ show fitness ++ "]"
+                                                          -- check for perfect entity
+                                                          if fitness == 0.0
+                                                             then do 
+                                                                     liftIO $ putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
+                                                                     return newPa
+                                                             else evolutionChkpt cfg newPa step gss
+
+-- no more gen. indices/seeds => quit
+evolutionChkpt _   (pop,archive)   _           []     = do 
+                                                           liftIO $ putStrLn $ "done evolving!"
+                                                           return (pop,archive)
+
+-- |Initialize.
+initGA :: (Entity e d p m) => StdGen -> GAConfig -> p -> ([e],Int,Int,Int,Float,Float,[(Int,Int)])
+initGA g cfg src = (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
+  where
+    -- generate list of random integers
+    rs = randoms g :: [Int]
+
+    -- initial population
+    (rs',pop) = initPop src (popSize cfg) rs
+
+    ps = popSize cfg
+    -- number of entities generated by crossover/mutation
+    cCnt = round $ (crossoverRate cfg) * (fromIntegral ps)
+    mCnt = round $ (mutationRate cfg) * (fromIntegral ps)
+    -- archive size
+    aSize = archiveSize cfg
+    -- crossover/mutation parameters
+    crossPar = crossoverParam cfg
+    mutPar = mutationParam cfg
+    --  seeds for evolution
+    seeds = take (maxGenerations cfg) rs'
+    -- seeds per generation
+    genSeeds = zip [0..] seeds
+ 
+-- |Do the evolution!
+evolve :: (Entity e d p m) => StdGen -> GAConfig -> p -> d -> m e
+evolve g cfg src dataset = do
+                -- initialize
+                let (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) = if not (withCheckpointing cfg)
+                                                                              then initGA g cfg src
+                                                                              else error "(evolve) No checkpointing support because it requires liftIO; see evolveChkpt."
+                    (pop',archive') = (zip (repeat Nothing) pop, [])
+                -- do the evolution
+                (_,resArchive) <- evolution cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
+                
+               
+	        -- return best entity 
+                if null resArchive
+                  then error $ "(evolve) empty archive!"
+                  else return $ snd $ head resArchive
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
 restoreFromCheckpoint :: (Entity e d p m) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,ScoredGen e))
@@ -195,82 +283,31 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
     fn = chkptFileName cfg (gi,seed)
 restoreFromCheckpoint _ [] = return Nothing
 
--- |Checkpoint a single generation.
-checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> ScoredGen e -> IO()
-checkpointGen cfg index seed (pop,archive) = do
-                                           let txt = show $ (pop,archive)
-                                               fn = chkptFileName cfg (index,seed)
-                                           if debug 
-                                              then putStrLn $ "writing checkpoint for gen " ++ (show index) ++ " to " ++ fn
-                                              else return ()
-                                           createDirectoryIfMissing True "checkpoints"
-                                           writeFile fn txt
+-- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
+evolveChkpt :: (Entity e d p m, MonadIO m) => StdGen -> GAConfig -> p -> d -> m e
+evolveChkpt g cfg src dataset = do
+                                   -- initialize
+                                   let (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) = initGA g cfg src
+                                       checkpointing = withCheckpointing cfg
 
--- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
-evolution cfg (pop,archive) step ((gi,seed):gss) = do
-                                                     newPa@(_,archive') <- step (pop,archive) (gi,seed) 
-                                                     let (Just fitness, _) = head archive'
-                                                     if fitness == 0.0
-                                                        then return newPa
-                                                        else evolution cfg newPa step gss
-                                                {--do
-                                             newPa@(_,archive') <- step (pop,archive) (gi,seed)
-                                             let (Just fitness, e) = head archive'
-                                             -- checkpoint generation if desired
-                                             if (withCheckpointing cfg)
-                                               then checkpointGen cfg gi seed newPa
-                                               else return () -- skip checkpoint
-                                             putStrLn $ "best entity (gen. " ++ show gi ++ "): " ++ (show e) ++ " [fitness: " ++ show fitness ++ "]"
-                                             -- check for perfect entity
-                                             if fitness == 0.0
-                                                then do 
-                                                        putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
-                                                        return newPa
-                                                else evolution cfg newPa step gss--}
--- no more gen. indices/seeds => quit
-evolution _ (pop,archive) _              []    = return (pop,archive) {--do 
-                                                   putStrLn $ "done evolving!"
-                                                   return (pop,archive)--}
- 
--- |Do the evolution!
-evolve :: (Entity e d p m) => StdGen -> GAConfig -> p -> d -> m e
-evolve g cfg src dataset = do
-                -- generate list of random integers
-                let rs = randoms g :: [Int]
+                                   -- (maybe) restore from checkpoint
+                                   restored <- liftIO $ if checkpointing
+                                                        then restoreFromCheckpoint cfg (reverse genSeeds) 
+                                                        else return Nothing
 
-                    -- initial population
-                let (rs',pop) = initPop src (popSize cfg) rs
-
-                let ps = popSize cfg
-                    -- number of entities generated by crossover/mutation
-                    cCnt = round $ (crossoverRate cfg) * (fromIntegral ps)
-                    mCnt = round $ (mutationRate cfg) * (fromIntegral ps)
-                    -- archive size
-                    aSize = archiveSize cfg
-                    -- crossover/mutation parameters
-                    crossPar = crossoverParam cfg
-                    mutPar = mutationParam cfg
-                    --  seeds for evolution
-                    seeds = take (maxGenerations cfg) rs'
-                    -- seeds per generation
-                    genSeeds = zip [0..] seeds
-                    -- checkpoint?
-                    checkpointing = withCheckpointing cfg
-                    -- do the evolution
-                {--restored <- if checkpointing
-                               then restoreFromCheckpoint cfg (reverse genSeeds) :: (Entity a b c) => IO (Maybe (Int,ScoredGen a))
-                               else return Nothing--}
-                    restored = Nothing
-                let (gi,(pop',archive')) = if isJust restored
+                                   let (gi,(pop',archive')) = if isJust restored
                                           -- restored pop/archive from checkpoint
                                           then dbg ("restored from checkpoint!\n\n") $ fromJust restored 
                                           -- restore failed, new population and empty archive
                                           else dbg (if checkpointing then "no checkpoint found...\n\n"
-                                                                       else "checkpoints ignored...\n\n") 
+                                                                     else "checkpoints ignored...\n\n") 
                                                          (-1, (zip (repeat Nothing) pop, []))
-                (_,resArchive) <- evolution cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) (filter ((>gi) . fst) genSeeds)
-                
-                if null resArchive
-                  then error $ "(evolve) empty archive!"
-                  else return $ snd $ head resArchive
+                                       -- filter out seeds from past generations
+                                       genSeeds' = filter ((>gi) . fst) genSeeds
+                                   -- do the evolution
+                                   (_,resArchive) <- evolutionChkpt cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
+               
+				   -- return best entity 
+                                   if null resArchive
+                                      then error $ "(evolve) empty archive!"
+                                      else return $ snd $ head resArchive
