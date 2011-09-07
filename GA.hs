@@ -12,7 +12,7 @@ module GA (Entity(..),
            evolve) where
 
 import Data.List (intersperse, sortBy, nub)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Ord (comparing)
 import Debug.Trace (trace)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
@@ -81,7 +81,11 @@ class (Eq a, Read a, Show a, ShowEntity a) => Entity a b c | a -> b, a -> c wher
   -- |Mutation operator: mutate an entity into a new entity.
   mutation :: c -> Float -> Int -> a -> Maybe a
   -- |Score an entity (lower is better).
-  score :: a -> b -> Double
+  score' :: a -> b -> Double -- ^ pure
+  score :: (Monad m) => a -> b -> m Double -- ^ monadic
+  score x y = do 
+                 let s = score' x y
+                 return s
 
 -- |A possibly scored entity.
 type ScoredEntity a = (Maybe Double, a)
@@ -110,9 +114,11 @@ initPop src n seeds = (seeds'', entities)
     entities = map (genRandom src) seeds'
 
 -- |Score an entity (if it hasn't been already).
-scoreEnt :: (Entity a b c) => b -> ScoredEntity a -> ScoredEntity a
-scoreEnt _ e@(Just _,_) = e
-scoreEnt d (Nothing,x) = (Just $ score x d, x)
+scoreEnt :: (Monad m, Entity a b c) => b -> ScoredEntity a -> m (ScoredEntity a)
+scoreEnt _ e@(Just _,_) = return e
+scoreEnt dataset (Nothing,x) = do 
+                            s <- score x dataset
+                            return (Just s, x)
 
 -- |Binary tournament selection operator.
 tournamentSelection :: [ScoredEntity a] -> Int -> a
@@ -132,36 +138,37 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
 -- * sort by fitness
 --
 -- * create new population using crossover/mutation
-evolutionStep :: (Entity a b c) => c -> b -> (Int,Int,Int) -> (Float,Float) -> ScoredGen a -> (Int,Int) -> ScoredGen a
-evolutionStep src d (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) = dbg (   "\n\ngeneration " ++ (show gi) ++ ": \n\n" 
-                                                                              ++ "  scored population: " ++ (showScoredEntities scoredPop) ++ "\n\n"
-                                                                              ++ "  archive: " ++ (showScoredEntities archive') ++ "\n\n"
-                                                                              ++ "  archive fitnesses: " ++ (show $ map fst archive') ++ "\n\n"
-                                                                              ++ "  generated " ++ show (length pop') ++ " entities\n\n"
-                                                                              ++ (replicate 150 '='))
-                                                                       (pop',archive')
-  where
-    -- score population
-    scoredPop = map (scoreEnt d) pop
-    -- combine with archive for selection
-    combo = scoredPop ++ archive
-    -- split seeds for crossover selection/seeds, mutation selection/seeds
-    seeds = randoms (mkStdGen seed) :: [Int]
-    -- generate twice as many crossover/mutation entities as needed, because crossover/mutation can fail
-    (crossSelSeeds,seeds')   = takeAndDrop (2*2*cn) seeds
-    (crossSeeds   ,seeds'')  = takeAndDrop (2*cn) seeds'
-    (mutSelSeeds  ,seeds''') = takeAndDrop (2*mn) seeds''
-    (mutSeeds     ,_)        = takeAndDrop (2*mn) seeds'''
-    -- crossover entities
-    crossSel = currify $ map (tournamentSelection combo) crossSelSeeds
-    crossEnts = take cn $ map fromJust $ filter isJust $ zipWith ($) (map (uncurry . (crossover src crossPar)) crossSeeds) crossSel
-    -- mutation entities
-    mutSel = map (tournamentSelection combo) mutSelSeeds
-    mutEnts = take cn $ map fromJust $ filter isJust $ zipWith ($) (map (mutation src mutPar) mutSeeds) mutSel
-    -- new population: crossovered + mutated entities
-    pop' = zip (repeat Nothing) $ crossEnts ++ mutEnts
-    -- new archive: best entities so far
-    archive' = take an $ nub $ sortBy (comparing fst) $ filter (isJust . fst) combo
+evolutionStep :: (Entity a b c, Monad m) => c -> b -> (Int,Int,Int) -> (Float,Float) -> ScoredGen a -> (Int,Int) -> m (ScoredGen a)
+evolutionStep src d (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) = do 
+                    -- score population
+                    scoredPop <- mapM (scoreEnt d) pop
+                    let 
+                        -- combine with archive for selection
+                        combo = scoredPop ++ archive
+                        -- split seeds for crossover selection/seeds, mutation selection/seeds
+                        seeds = randoms (mkStdGen seed) :: [Int]
+                        -- generate twice as many crossover/mutation entities as needed, because crossover/mutation can fail
+                        (crossSelSeeds,seeds')   = takeAndDrop (2*2*cn) seeds
+                        (crossSeeds   ,seeds'')  = takeAndDrop (2*cn) seeds'
+                        (mutSelSeeds  ,seeds''') = takeAndDrop (2*mn) seeds''
+                        (mutSeeds     ,_)        = takeAndDrop (2*mn) seeds'''
+                        -- crossover entities
+                        crossSel = currify $ map (tournamentSelection combo) crossSelSeeds
+                        crossEnts = take cn $ catMaybes $ zipWith ($) (map (uncurry . (crossover src crossPar)) crossSeeds) crossSel
+                        -- mutation entities
+                        mutSel = map (tournamentSelection combo) mutSelSeeds
+                        mutEnts = take cn $ catMaybes $ zipWith ($) (map (mutation src mutPar) mutSeeds) mutSel
+                        -- new population: crossovered + mutated entities
+                        pop' = zip (repeat Nothing) $ crossEnts ++ mutEnts
+                        -- new archive: best entities so far
+                        archive' = take an $ nub $ sortBy (comparing fst) $ filter (isJust . fst) combo
+                    return $ dbg (   "\n\ngeneration " ++ (show gi) ++ ": \n\n" 
+                                    ++ "  scored population: " ++ (showScoredEntities scoredPop) ++ "\n\n"
+                                    ++ "  archive: " ++ (showScoredEntities archive') ++ "\n\n"
+                                    ++ "  archive fitnesses: " ++ (show $ map fst archive') ++ "\n\n"
+                                    ++ "  generated " ++ show (length pop') ++ " entities\n\n"
+                                    ++ (replicate 150 '='))
+                             (pop',archive')
 
 -- |Generate file name for checkpoint.
 chkptFileName :: GAConfig -> (Int,Int) -> FilePath
@@ -200,28 +207,34 @@ checkpointGen cfg index seed (pop,archive) = do
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolution :: (Entity a b c) => GAConfig -> ScoredGen a -> (ScoredGen a -> (Int,Int) -> ScoredGen a) -> [(Int,Int)] -> IO (ScoredGen a)
+evolution :: (Entity a b c, Monad m) => GAConfig -> ScoredGen a -> (ScoredGen a -> (Int,Int) -> m (ScoredGen a)) -> [(Int,Int)] -> m (ScoredGen a)
 evolution cfg (pop,archive) step ((gi,seed):gss) = do
-                                             let newPa@(_,archive') = step (pop,archive) (gi,seed)
-                                                 (Just fitness, e) = head archive'
+                                                     newPa@(_,archive') <- step (pop,archive) (gi,seed) 
+                                                     let (Just fitness, _) = head archive'
+                                                     if fitness == 0.0
+                                                        then return newPa
+                                                        else evolution cfg newPa step gss
+                                                {--do
+                                             newPa@(_,archive') <- step (pop,archive) (gi,seed)
+                                             let (Just fitness, e) = head archive'
                                              -- checkpoint generation if desired
                                              if (withCheckpointing cfg)
                                                then checkpointGen cfg gi seed newPa
                                                else return () -- skip checkpoint
                                              putStrLn $ "best entity (gen. " ++ show gi ++ "): " ++ (show e) ++ " [fitness: " ++ show fitness ++ "]"
                                              -- check for perfect entity
-                                             if (fromJust $ fst $ head archive') == 0.0
+                                             if fitness == 0.0
                                                 then do 
                                                         putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
                                                         return newPa
-                                                else evolution cfg newPa step gss
+                                                else evolution cfg newPa step gss--}
 -- no more gen. indices/seeds => quit
-evolution _ (pop,archive) _              []    = do 
+evolution _ (pop,archive) _              []    = return (pop,archive) {--do 
                                                    putStrLn $ "done evolving!"
-                                                   return (pop,archive)
+                                                   return (pop,archive)--}
  
 -- |Do the evolution!
-evolve :: (Entity a b c) => StdGen -> GAConfig -> c -> b -> IO a
+evolve :: (Entity a b c, Monad m) => StdGen -> GAConfig -> c -> b -> m a
 evolve g cfg src dataset = do
                 -- generate list of random integers
                 let rs = randoms g :: [Int]
@@ -245,9 +258,10 @@ evolve g cfg src dataset = do
                     -- checkpoint?
                     checkpointing = withCheckpointing cfg
                     -- do the evolution
-                restored <- if checkpointing
+                {--restored <- if checkpointing
                                then restoreFromCheckpoint cfg (reverse genSeeds) :: (Entity a b c) => IO (Maybe (Int,ScoredGen a))
-                               else return Nothing
+                               else return Nothing--}
+                    restored = Nothing
                 let (gi,(pop',archive')) = if isJust restored
                                           -- restored pop/archive from checkpoint
                                           then dbg ("restored from checkpoint!\n\n") $ fromJust restored 

@@ -63,7 +63,7 @@ instance Entity Sentence Target [Letter] where
   -- score: distance between current string and target
   -- sum of 'distances' between letters, large penalty for additional/short letters
   -- NOTE: lower is better
-  score e x = fromIntegral $ d + 100*l
+  score' e x = fromIntegral $ d + 100*l
     where
       e' = map ord e
       x' = map ord x

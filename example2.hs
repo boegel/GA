@@ -10,10 +10,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
+import Control.Monad.Identity (Identity)
 import Data.List (foldl')
 import System (getArgs)
 import System.Random (mkStdGen, random)
+
+import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
 
 --
 -- HELPER FUNCTIONS
@@ -60,7 +62,7 @@ instance Entity Number () () where
 
   -- score: how closely does the given number match the criteria?
   -- NOTE: lower is better
-  score e _ = fromIntegral $ s + n
+  score' e _ = fromIntegral $ s + n
     where
       ds = divisors e
       s = abs $ (-) 96 $ sum' ds
@@ -100,6 +102,6 @@ main = do
 
         -- Do the evolution!
         -- two last parameters (pool for generating new entities and extra data to score an entity) are unused in this example
-        e <- evolve g cfg () () :: IO Int
+        e <- evolve g cfg () () :: Identity Int
         
         putStrLn $ "best entity: " ++ (show e)
