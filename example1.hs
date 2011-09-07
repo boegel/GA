@@ -9,11 +9,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
+import Control.Monad.Identity (Identity(..))
 import Data.Char (chr,ord)
 import Data.List (foldl')
 import System (getArgs)
 import System.Random (mkStdGen, random, randoms)
+
+import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
 
 -- efficient sum
 sum' :: (Num a) => [a] -> a
@@ -27,7 +29,7 @@ type Sentence = String
 type Target = String
 type Letter = Char
 
-instance Entity Sentence Target [Letter] where
+instance Entity Sentence Target [Letter] Identity where
  
   -- generate a random entity, i.e. a random string
   -- assumption: max. 100 chars, only 'printable' ASCII (first 128)
@@ -106,6 +108,6 @@ main = do
             charsPool = map chr [32..126]
         -- Do the evolution!
         -- Note: if either of the last two arguments is unused, just use () as a value
-        e <- evolve g cfg charsPool "Hello World!" :: IO String
+            (Identity e) = evolve g cfg charsPool "Hello World!" :: Identity String
         
         putStrLn $ "best entity: " ++ (show e)

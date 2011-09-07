@@ -10,7 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-import Control.Monad.Identity (Identity)
+import Control.Monad.Identity (Identity(..))
 import Data.List (foldl')
 import System (getArgs)
 import System.Random (mkStdGen, random)
@@ -43,7 +43,7 @@ sum' = foldl' (+) 0
 
 type Number = Int
 
-instance Entity Number () () where
+instance Entity Number () () Identity where
  
   -- generate a random entity, i.e. a random integer value 
   genRandom _ seed = (fst $ random $ mkStdGen seed) `mod` 10000
@@ -102,6 +102,6 @@ main = do
 
         -- Do the evolution!
         -- two last parameters (pool for generating new entities and extra data to score an entity) are unused in this example
-        e <- evolve g cfg () () :: Identity Int
+            (Identity e) = evolve g cfg () () :: Identity Int
         
         putStrLn $ "best entity: " ++ (show e)

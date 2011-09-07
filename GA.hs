@@ -73,55 +73,55 @@ data GAConfig = GAConfig {
 --
 -- * some kind of pool used to generate random entities, e.g. a Hoogle database (c)
 --
-class (Eq a, Read a, Show a, ShowEntity a) => Entity a b c | a -> b, a -> c where
+class (Eq e, Read e, Show e, ShowEntity e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
   -- |Generate a random entity.
-  genRandom :: c -> Int -> a
+  genRandom :: p -> Int -> e
   -- |Crossover operator: combine two entities into a new entity.
-  crossover :: c -> Float -> Int -> a -> a -> Maybe a
+  crossover :: p -> Float -> Int -> e -> e -> Maybe e
   -- |Mutation operator: mutate an entity into a new entity.
-  mutation :: c -> Float -> Int -> a -> Maybe a
+  mutation :: p -> Float -> Int -> e -> Maybe e
   -- |Score an entity (lower is better).
-  score' :: a -> b -> Double -- ^ pure
-  score :: (Monad m) => a -> b -> m Double -- ^ monadic
+  score' :: e -> d -> Double -- ^ pure
+  score :: e -> d -> m Double -- ^ monadic
   score x y = do 
                  let s = score' x y
                  return s
 
 -- |A possibly scored entity.
-type ScoredEntity a = (Maybe Double, a)
+type ScoredEntity e = (Maybe Double, e)
 
 -- |Scored generation (population and archive).
-type ScoredGen a = ([ScoredEntity a],[ScoredEntity a])
+type ScoredGen e = ([ScoredEntity e],[ScoredEntity e])
 
 -- |Type class for pretty printing an entity instead of just using the default show implementation.
-class ShowEntity a where
+class ShowEntity e where
   -- |Show an entity.
-  showEntity :: a -> String
+  showEntity :: e -> String
 
 -- |Show a scored entity.
-showScoredEntity :: ShowEntity a => ScoredEntity a -> String
+showScoredEntity :: ShowEntity e => ScoredEntity e -> String
 showScoredEntity (s,e) = "(" ++ show s ++ ", " ++ showEntity e ++ ")"
 
 -- |Show a list of scored entities.
-showScoredEntities :: ShowEntity a => [ScoredEntity a] -> String
+showScoredEntities :: ShowEntity e => [ScoredEntity e] -> String
 showScoredEntities es = ("["++) . (++"]") . concat . intersperse "," $ map showScoredEntity es
 
 -- |Initialize: generate initial population.
-initPop :: (Entity a b c) => c -> Int -> [Int] -> ([Int],[a])
+initPop :: (Entity e d p m) => p -> Int -> [Int] -> ([Int],[e])
 initPop src n seeds = (seeds'', entities)
   where
     (seeds',seeds'')  = takeAndDrop n seeds
     entities = map (genRandom src) seeds'
 
 -- |Score an entity (if it hasn't been already).
-scoreEnt :: (Monad m, Entity a b c) => b -> ScoredEntity a -> m (ScoredEntity a)
+scoreEnt :: (Entity e d p m) => d -> ScoredEntity e -> m (ScoredEntity e)
 scoreEnt _ e@(Just _,_) = return e
 scoreEnt dataset (Nothing,x) = do 
                             s <- score x dataset
                             return (Just s, x)
 
 -- |Binary tournament selection operator.
-tournamentSelection :: [ScoredEntity a] -> Int -> a
+tournamentSelection :: [ScoredEntity e] -> Int -> e
 tournamentSelection xs seed = if s1 < s2 then x1 else x2
   where
     len = length xs
@@ -138,10 +138,10 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
 -- * sort by fitness
 --
 -- * create new population using crossover/mutation
-evolutionStep :: (Entity a b c, Monad m) => c -> b -> (Int,Int,Int) -> (Float,Float) -> ScoredGen a -> (Int,Int) -> m (ScoredGen a)
-evolutionStep src d (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) = do 
+evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> ScoredGen e -> (Int,Int) -> m (ScoredGen e)
+evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) = do 
                     -- score population
-                    scoredPop <- mapM (scoreEnt d) pop
+                    scoredPop <- mapM (scoreEnt dataset) pop
                     let 
                         -- combine with archive for selection
                         combo = scoredPop ++ archive
@@ -183,7 +183,7 @@ chkptFileName cfg (gi,seed) = dbg fn fn
     fn = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi) ++ "-seed-" ++ (show seed) ++ ".chk"
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
-restoreFromCheckpoint :: (Entity a b c) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,ScoredGen a))
+restoreFromCheckpoint :: (Entity e d p m) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,ScoredGen e))
 restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                   chkptFound <- doesFileExist fn
                                                   if chkptFound 
@@ -196,7 +196,7 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
 restoreFromCheckpoint _ [] = return Nothing
 
 -- |Checkpoint a single generation.
-checkpointGen :: (Entity a b c) => GAConfig -> Int -> Int -> ScoredGen a -> IO()
+checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> ScoredGen e -> IO()
 checkpointGen cfg index seed (pop,archive) = do
                                            let txt = show $ (pop,archive)
                                                fn = chkptFileName cfg (index,seed)
@@ -207,7 +207,7 @@ checkpointGen cfg index seed (pop,archive) = do
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolution :: (Entity a b c, Monad m) => GAConfig -> ScoredGen a -> (ScoredGen a -> (Int,Int) -> m (ScoredGen a)) -> [(Int,Int)] -> m (ScoredGen a)
+evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
 evolution cfg (pop,archive) step ((gi,seed):gss) = do
                                                      newPa@(_,archive') <- step (pop,archive) (gi,seed) 
                                                      let (Just fitness, _) = head archive'
@@ -234,7 +234,7 @@ evolution _ (pop,archive) _              []    = return (pop,archive) {--do
                                                    return (pop,archive)--}
  
 -- |Do the evolution!
-evolve :: (Entity a b c, Monad m) => StdGen -> GAConfig -> c -> b -> m a
+evolve :: (Entity e d p m) => StdGen -> GAConfig -> p -> d -> m e
 evolve g cfg src dataset = do
                 -- generate list of random integers
                 let rs = randoms g :: [Int]
