@@ -8,6 +8,7 @@
 --}
 
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
 import Data.List (foldl')
@@ -28,7 +29,7 @@ divisors n = concat $ map divsFor [1..(sqrt' n)]
 
 -- "integer" square root
 sqrt' :: Int -> Int
-sqrt' n = floor $ sqrt $ fromIntegral n
+sqrt' n = floor (sqrt $ fromIntegral n :: Float)
 
 -- efficient sum
 sum' :: (Num a) => [a] -> a
@@ -38,7 +39,9 @@ sum' = foldl' (+) 0
 -- GA TYPE CLASS IMPLEMENTATION
 --
 
-instance Entity Int () () where
+type Number = Int
+
+instance Entity Number () () where
  
   -- generate a random entity, i.e. a random integer value 
   genRandom _ seed = (fst $ random $ mkStdGen seed) `mod` 10000
@@ -48,6 +51,7 @@ instance Entity Int () () where
                                          0 -> e1+e2
                                          1 -> abs (e1-e2)
                                          2 -> (e1+e2) `div` 2
+                                         _ -> error "crossover: unknown case"
 
   -- mutation operator: add or subtract random value (max. 10)
   mutation _ _ seed e = Just $ if seed `mod` 2 == 0
@@ -62,7 +66,7 @@ instance Entity Int () () where
       s = abs $ (-) 96 $ sum' ds
       n = abs $ (-) 8 $ length ds
 
-instance ShowEntity Int where 
+instance ShowEntity Number where 
   showEntity = show
 
 main :: IO() 

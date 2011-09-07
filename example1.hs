@@ -23,7 +23,11 @@ sum' = foldl' (+) 0
 -- GA TYPE CLASS IMPLEMENTATION
 --
 
-instance Entity String String [Char] where
+type Sentence = String
+type Target = String
+type Letter = Char
+
+instance Entity Sentence Target [Letter] where
  
   -- generate a random entity, i.e. a random string
   -- assumption: max. 100 chars, only 'printable' ASCII (first 128)
@@ -66,7 +70,7 @@ instance Entity String String [Char] where
       d = sum' $ map abs $ zipWith (-) e' x'
       l = abs $ (length x) - (length e)
 
-instance ShowEntity String where 
+instance ShowEntity Sentence where 
   showEntity = show
 
 main :: IO() 

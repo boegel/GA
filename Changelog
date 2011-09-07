@@ -9,3 +9,6 @@ v0.1 (Aug. 31st 2011):
 	- checkpointing between generations with automatic restore from checkpoint
 * two toy examples
 
+v0.2 ():
+
+* fixed compilation warnings in GA module and examples
