@@ -19,17 +19,19 @@ import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.Random (StdGen, mkStdGen, randoms)
 
 -- |Currify a list of elements into tuples.
-currify :: [a] -> [(a,a)]
+currify :: [a] -- ^ list
+           -> [(a,a)] -- ^ list of tuples
 currify (x:y:xs) = (x,y):currify xs
 currify [] = []
 currify [_] = error "(currify) ERROR: only one element left?!?"
 
 -- |Take and drop elements of a list in a single pass.
-takeAndDrop :: Int -> [a] -> ([a],[a])
+takeAndDrop :: Int -- ^ number of elements to take/drop
+            -> [a] -- ^ list 
+            -> ([a],[a]) -- ^ result: taken list element and rest of list
 takeAndDrop n xs
         | n > 0     = let (hs,ts) = takeAndDrop (n-1) (tail xs) in (head xs:hs, ts)
         | otherwise = ([],xs)
-
 
 -- |Configuration for genetic algorithm.
 data GAConfig = GAConfig {
@@ -63,15 +65,15 @@ data GAConfig = GAConfig {
 --
 class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
   -- |Generate a random entity.
-  genRandom :: p -> Int -> e
+  genRandom :: p -> Int -> m e
   -- |Crossover operator: combine two entities into a new entity.
   crossover :: p -> Float -> Int -> e -> e -> Maybe e
   -- |Mutation operator: mutate an entity into a new entity.
   mutation :: p -> Float -> Int -> e -> Maybe e
   -- |Score an entity (lower is better).
-  score' :: e -> d -> Double -- ^ pure
+  score' :: e -> d -> Double -- ^ pure scoring function
   score' _ _ = undefined
-  score :: e -> d -> m Double -- ^ monadic
+  score :: e -> d -> m Double -- ^ monadic scoring function
   score e d = do 
                  let s = score' e d
                  return s
@@ -83,20 +85,28 @@ type ScoredEntity e = (Double, e)
 type Generation e = ([e],[ScoredEntity e])
 
 -- |Initialize: generate initial population.
-initPop :: (Entity e d p m) => p -> Int -> [Int] -> ([Int],[e])
-initPop pool n seeds = (seeds'', entities)
-  where
-    (seeds',seeds'')  = takeAndDrop n seeds
-    entities = map (genRandom pool) seeds'
+initPop :: (Entity e d p m) => p -- ^ pool for generating random entities
+                            -> Int -- ^ population size
+                            -> Int -- ^ random seed
+                            -> m [e] -- ^ initialized population and remaining seeds
+initPop pool n seed = do
+                         let g = mkStdGen seed
+                             seeds = take n $ randoms g
+			 entities <- mapM (genRandom pool) seeds
+                         return entities
 
 -- |Score an entity (if it hasn't been already).
-scoreEnt :: (Entity e d p m) => d -> e -> m (ScoredEntity e)
+scoreEnt :: (Entity e d p m) => d -- ^ dataset for scoring entity
+                             -> e -- ^ entity to score
+                             -> m (ScoredEntity e) -- ^ scored entity
 scoreEnt dataset e = do 
                         s <- score e dataset
                         return (s, e)
 
 -- |Binary tournament selection operator.
-tournamentSelection :: [ScoredEntity e] -> Int -> e
+tournamentSelection :: [ScoredEntity e] -- ^ set of entities to run selection on
+                    -> Int -- ^ random seed
+                    -> e -- ^ selected entity
 tournamentSelection xs seed = if s1 < s2 then x1 else x2
   where
     len = length xs
@@ -105,7 +115,12 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
     [(s1,x1),(s2,x2)] = map ((!!) xs) is
 
 -- |Apply crossover to obtain new entites.
-performCrossover :: (Entity e d p m) => Float -> Int -> Int -> p -> [ScoredEntity e] -> [e]
+performCrossover :: (Entity e d p m) => Float -- ^ crossover parameter
+                                     -> Int -- ^ number of entities to generate
+                                     -> Int -- ^ random seed
+                                     -> p -- ^ pool for combining entities
+                                     -> [ScoredEntity e] -- ^ set of entities to run crossover on
+                                     -> [e] -- combined entities
 performCrossover p n seed pool es = take n $ catMaybes $ zipWith ($) (map (uncurry . (crossover pool p)) crossSeeds) $ tuples
   where
     g = mkStdGen seed
@@ -114,7 +129,12 @@ performCrossover p n seed pool es = take n $ catMaybes $ zipWith ($) (map (uncur
     tuples = currify $ map (tournamentSelection es) selSeeds
 
 -- |Apply mutation to obtain new entites.
-performMutation :: (Entity e d p m) => Float -> Int -> Int -> p -> [ScoredEntity e] -> [e]
+performMutation :: (Entity e d p m) => Float -- ^ mutation parameter
+                                    -> Int -- ^ number of entities to generate
+                                    -> Int -- ^ random seed
+                                    -> p -- ^ pool for mutating entities
+                                    -> [ScoredEntity e] -- ^ set of entities to run mutation on
+                                    -> [e] -- mutated entities
 performMutation p n seed pool es = take n $ catMaybes $ zipWith ($) (map (mutation pool p) mutSeeds) $ map (tournamentSelection es) selSeeds
   where
     g = mkStdGen seed
@@ -123,14 +143,22 @@ performMutation p n seed pool es = take n $ catMaybes $ zipWith ($) (map (mutati
 
 -- |Function to perform a single evolution step:
 --
--- * score all entities
+-- * score all entities in the population
 --
--- * combine with best entities so far
+-- * combine with best entities so far (archive)
 --
 -- * sort by fitness
 --
 -- * create new population using crossover/mutation
-evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> Generation e -> Int -> m (Generation e)
+--
+-- * retain best scoring entities in the archive
+evolutionStep :: (Entity e d p m) => p -- ^ pool for crossover/mutation
+                                  -> d -- ^ dataset for scoring entities
+                                  -> (Int,Int,Int) -- ^ number of crossover/mutation/archive entities
+                                  -> (Float,Float) -- ^ crossover/mutation parameters
+                                  -> Generation e -- ^ current generation
+                                  -> Int -- ^ seed for next generation
+                                  -> m (Generation e) -- ^ next generation
 evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     scoredPop <- mapM (scoreEnt dataset) pop
@@ -150,18 +178,24 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                     return (pop',archive')
 
 -- |Evolution: evaluate generation and continue.
-evolution :: (Entity e d p m) => GAConfig -> Generation e -> (Generation e -> Int -> m (Generation e)) -> [(Int,Int)] -> m (Generation e)
-evolution cfg (pop,archive) step ((_,seed):gss) = do
-                                                     newPa@(_,archive') <- step (pop,archive) seed 
-                                                     let (fitness, _) = head archive'
+evolution :: (Entity e d p m) => GAConfig -- ^ configuration for the genetic algorithm
+                              -> Generation e -- ^ current generation
+                              -> (Generation e -> Int -> m (Generation e)) -- actual evolution function, which evolves one generation
+                              -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
+                              -> m (Generation e) -- ^ resulting generation
+evolution cfg generation step ((_,seed):gss) = do
+                                                     nextGeneration <- step generation seed 
+                                                     let (fitness, _) = (head $ snd nextGeneration)
                                                      if fitness == 0.0
-                                                        then return newPa
-                                                        else evolution cfg newPa step gss
+                                                        then return nextGeneration
+                                                        else evolution cfg nextGeneration step gss
 -- no more gen. indices/seeds => quit
-evolution _ (pop,archive) _              []    = return (pop,archive)
+evolution _ generation _              []    = return generation
 
 -- |Generate file name for checkpoint.
-chkptFileName :: GAConfig -> (Int,Int) -> FilePath
+chkptFileName :: GAConfig -- ^ configuration for generation algorithm
+              -> (Int,Int) -- ^ generation index and random seed
+              -> FilePath -- ^ path of checkpoint file
 chkptFileName cfg (gi,seed) = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi) ++ "-seed-" ++ (show seed) ++ ".chk"
   where
     cfgTxt = (show $ popSize cfg) ++ "-" ++ 
@@ -172,7 +206,11 @@ chkptFileName cfg (gi,seed) = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi)
              (show $ mutationParam cfg)
 
 -- |Checkpoint a single generation.
-checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> Generation e -> IO()
+checkpointGen :: (Entity e d p m) => GAConfig -- ^ configuraton for genetic algorithm
+                                  -> Int -- ^ generation index
+                                  -> Int -- ^ random seed for generation
+                                  -> Generation e -- ^ current generation
+                                  -> IO() -- ^ writes to file
 checkpointGen cfg index seed (pop,archive) = do
                                            let txt = show $ (pop,archive)
                                                fn = chkptFileName cfg (index,seed)
@@ -181,7 +219,11 @@ checkpointGen cfg index seed (pop,archive) = do
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> Generation e -> (Generation e -> Int -> m (Generation e)) -> [(Int,Int)] -> m (Generation e)
+evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -- ^ configuration for genetic algorithm
+                                              -> Generation e -- ^ current generation
+                                              -> (Generation e -> Int -> m (Generation e)) -- actual evolution function, which evolves one generation
+                                              -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
+                                              -> m (Generation e) -- ^ resulting generation
 evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                           newPa@(_,archive') <- step (pop,archive) seed
                                                           let (fitness, e) = head archive'
@@ -203,42 +245,51 @@ evolutionChkpt _   (pop,archive)   _           []     = do
                                                            return (pop,archive)
 
 -- |Initialize.
-initGA :: (Entity e d p m) => StdGen -> GAConfig -> p -> ([e],Int,Int,Int,Float,Float,[(Int,Int)])
-initGA g cfg pool = (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
-  where
-    -- generate list of random integers
-    rs = randoms g :: [Int]
+initGA :: (Entity e d p m) => StdGen  -- ^ random generator
+                           -> GAConfig -- ^ configuration for genetic algorithm
+                           -> p -- ^ pool for generating random entities
+                           -> m ([e],Int,Int,Int,Float,Float,[(Int,Int)]) -- ^ initialization result
+initGA g cfg pool = do
+                      -- generate list of random integers
+                      let (seed:rs) = randoms g :: [Int]
 
-    -- initial population
-    (rs',pop) = initPop pool (popSize cfg) rs
+                      -- initial population
+                      pop <- initPop pool (popSize cfg) seed
 
-    ps = popSize cfg
-    -- number of entities generated by crossover/mutation
-    cCnt = round $ (crossoverRate cfg) * (fromIntegral ps)
-    mCnt = round $ (mutationRate cfg) * (fromIntegral ps)
-    -- archive size
-    aSize = archiveSize cfg
-    -- crossover/mutation parameters
-    crossPar = crossoverParam cfg
-    mutPar = mutationParam cfg
-    --  seeds for evolution
-    seeds = take (maxGenerations cfg) rs'
-    -- seeds per generation
-    genSeeds = zip [0..] seeds
+                      let ps = popSize cfg
+                          -- number of entities generated by crossover/mutation
+                          cCnt = round $ (crossoverRate cfg) * (fromIntegral ps)
+                          mCnt = round $ (mutationRate cfg) * (fromIntegral ps)
+                          -- archive size
+                          aSize = archiveSize cfg
+                          -- crossover/mutation parameters
+                          crossPar = crossoverParam cfg
+                          mutPar = mutationParam cfg
+                          --  seeds for evolution
+                          seeds = take (maxGenerations cfg) rs
+                          -- seeds per generation
+                          genSeeds = zip [0..] seeds
+
+                      return (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
 
 -- |Extract the best entity from an archive.
-extractBest :: [ScoredEntity e] -> e
+extractBest :: [ScoredEntity e] -- ^ entity archive
+            -> e -- ^ result is best entity from archive (lowest fitness)
 extractBest archive 
 	| null archive = error $ "(extractBest) empty archive!"
-	| otherwise    = snd $ head archive 
+	| otherwise    = snd $ head $ sortBy (comparing fst) archive 
 
 -- |Do the evolution!
-evolve :: (Entity e d p m) => StdGen -> GAConfig -> p -> d -> m e
+evolve :: (Entity e d p m) => StdGen -- ^ random generator
+                           -> GAConfig -- ^ configuration for genetic algorithm
+                           -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                           -> d -- ^ dataset required to score entities
+                           -> m e -- ^ result is best entity found through evolution
 evolve g cfg pool dataset = do
                 -- initialize
-                let (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) = if not (withCheckpointing cfg)
-                                                                              then initGA g cfg pool
-                                                                              else error "(evolve) No checkpointing support because it requires liftIO; see evolveChkpt."
+                (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- if not (withCheckpointing cfg)
+                                                                           then initGA g cfg pool
+                                                                           else error "(evolve) No checkpointing support (requires liftIO); see evolveChkpt."
                 -- do the evolution
                 (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
@@ -247,7 +298,9 @@ evolve g cfg pool dataset = do
 	        return (extractBest resArchive)
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
-restoreFromCheckpoint :: (Entity e d p m) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,Generation e))
+restoreFromCheckpoint :: (Entity e d p m) => GAConfig -- ^ configuration for genetic algorithm
+                                          -> [(Int,Int)] -- ^ generation indices and random seeds
+                                          -> IO (Maybe (Int,Generation e)) -- ^ result is generation restored from checkpoint (if found, otherwise Nothing)
 restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                   chkptFound <- doesFileExist fn
                                                   if chkptFound 
@@ -260,11 +313,15 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
 restoreFromCheckpoint _ [] = return Nothing
 
 -- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
-evolveChkpt :: (Entity e d p m, MonadIO m) => StdGen -> GAConfig -> p -> d -> m e
+evolveChkpt :: (Entity e d p m, MonadIO m) => StdGen -- ^ random generator
+                                           -> GAConfig -- ^ configuration for genetic algorithm
+                                           -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                                           -> d -- ^ dataset required to score entities
+                                           -> m e -- ^ result is best entity found through evolution
 evolveChkpt g cfg pool dataset = do
                                    -- initialize
-                                   let (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) = initGA g cfg pool
-                                       checkpointing = withCheckpointing cfg
+                                   (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- initGA g cfg pool
+                                   let checkpointing = withCheckpointing cfg
 
                                    -- (maybe) restore from checkpoint
                                    restored <- liftIO $ if checkpointing

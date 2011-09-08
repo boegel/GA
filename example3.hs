@@ -32,7 +32,7 @@ instance Entity Sentence Target [Letter] IO where
  
   -- generate a random entity, i.e. a random string
   -- assumption: max. 100 chars, only 'printable' ASCII (first 128)
-  genRandom pool seed = take n $ map ((!!) pool) is
+  genRandom pool seed = return $ take n $ map ((!!) pool) is
     where
         g = mkStdGen seed
         n = (fst $ random g) `mod` 101

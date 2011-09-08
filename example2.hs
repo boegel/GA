@@ -46,7 +46,7 @@ type Number = Int
 instance Entity Number () () Identity where
  
   -- generate a random entity, i.e. a random integer value 
-  genRandom _ seed = (fst $ random $ mkStdGen seed) `mod` 10000
+  genRandom _ seed = return $ (fst $ random $ mkStdGen seed) `mod` 10000
 
   -- crossover operator: sum, (abs value of) difference or (rounded) mean
   crossover _ _ seed e1 e2 = Just $ case seed `mod` 3 of
