@@ -48,16 +48,16 @@ instance Entity Number () () Identity where
   genRandom _ seed = return $ (fst $ random $ mkStdGen seed) `mod` 10000
 
   -- crossover operator: sum, (abs value of) difference or (rounded) mean
-  crossover _ _ seed e1 e2 = Just $ case seed `mod` 3 of
-                                         0 -> e1+e2
-                                         1 -> abs (e1-e2)
-                                         2 -> (e1+e2) `div` 2
-                                         _ -> error "crossover: unknown case"
+  crossover _ _ seed e1 e2 = return $ Just $ case seed `mod` 3 of
+                                                  0 -> e1+e2
+                                                  1 -> abs (e1-e2)
+                                                  2 -> (e1+e2) `div` 2
+                                                  _ -> error "crossover: unknown case"
 
   -- mutation operator: add or subtract random value (max. 10)
-  mutation _ _ seed e = Just $ if seed `mod` 2 == 0
-                                  then e +(1 + seed `mod` 10)
-                                  else abs (e - (1 + seed `mod` 10))
+  mutation _ _ seed e = return $ Just $ if seed `mod` 2 == 0
+                                        then e +(1 + seed `mod` 10)
+                                        else abs (e - (1 + seed `mod` 10))
 
   -- score: how closely does the given number match the criteria?
   -- NOTE: lower is better

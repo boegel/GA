@@ -40,7 +40,7 @@ instance Entity Sentence Target [Letter] Identity where
         is = map (flip mod k) $ randoms g
 
   -- crossover operator: mix (and trim to shortest entity)
-  crossover _ _ seed e1 e2 = Just e
+  crossover _ _ seed e1 e2 = return $ Just e
     where
       g = mkStdGen seed
       cps = zipWith (\x y -> [x,y]) e1 e2
@@ -48,7 +48,7 @@ instance Entity Sentence Target [Letter] Identity where
       e = zipWith (!!) cps picks
 
   -- mutation operator: use next or previous letter randomly and add random characters (max. 9)
-  mutation pool p seed e = Just $ (zipWith replace tweaks e) ++ addChars
+  mutation pool p seed e = return $ Just $ (zipWith replace tweaks e) ++ addChars
     where
       g = mkStdGen seed
       k = round (1 / p) :: Int

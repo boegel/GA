@@ -11,6 +11,7 @@ module GA (Entity(..),
            evolve, 
            evolveVerbose) where
 
+import Control.Monad (zipWithM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.List (sortBy, nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
@@ -67,9 +68,9 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   -- |Generate a random entity.
   genRandom :: p -> Int -> m e
   -- |Crossover operator: combine two entities into a new entity.
-  crossover :: p -> Float -> Int -> e -> e -> Maybe e
+  crossover :: p -> Float -> Int -> e -> e -> m (Maybe e)
   -- |Mutation operator: mutate an entity into a new entity.
-  mutation :: p -> Float -> Int -> e -> Maybe e
+  mutation :: p -> Float -> Int -> e -> m (Maybe e)
   -- |Score an entity (lower is better).
   score' :: e -> d -> Double -- ^ pure scoring function
   score' _ _ = undefined
@@ -120,13 +121,14 @@ performCrossover :: (Entity e d p m) => Float -- ^ crossover parameter
                                      -> Int -- ^ random seed
                                      -> p -- ^ pool for combining entities
                                      -> [ScoredEntity e] -- ^ set of entities to run crossover on
-                                     -> [e] -- combined entities
-performCrossover p n seed pool es = take n $ catMaybes $ zipWith ($) (map (uncurry . (crossover pool p)) crossSeeds) $ tuples
-  where
-    g = mkStdGen seed
-    (selSeeds,seeds) = takeAndDrop (2*2*n) $ randoms g
-    (crossSeeds,_) = takeAndDrop (2*n) seeds
-    tuples = currify $ map (tournamentSelection es) selSeeds
+                                     -> m [e] -- combined entities
+performCrossover p n seed pool es = do 
+                                       let g = mkStdGen seed
+                                           (selSeeds,seeds) = takeAndDrop (2*2*n) $ randoms g
+                                           (crossSeeds,_) = takeAndDrop (2*n) seeds
+                                           tuples = currify $ map (tournamentSelection es) selSeeds
+                                       resEntities <- zipWithM ($) (map (uncurry . (crossover pool p)) crossSeeds) $ tuples
+                                       return $ take n $ catMaybes $ resEntities
 
 -- |Apply mutation to obtain new entites.
 performMutation :: (Entity e d p m) => Float -- ^ mutation parameter
@@ -134,12 +136,13 @@ performMutation :: (Entity e d p m) => Float -- ^ mutation parameter
                                     -> Int -- ^ random seed
                                     -> p -- ^ pool for mutating entities
                                     -> [ScoredEntity e] -- ^ set of entities to run mutation on
-                                    -> [e] -- mutated entities
-performMutation p n seed pool es = take n $ catMaybes $ zipWith ($) (map (mutation pool p) mutSeeds) $ map (tournamentSelection es) selSeeds
-  where
-    g = mkStdGen seed
-    (selSeeds,seeds) = takeAndDrop (2*n) $ randoms g
-    (mutSeeds,_) = takeAndDrop (2*n) seeds
+                                    -> m [e] -- mutated entities
+performMutation p n seed pool es = do 
+                                      let g = mkStdGen seed
+                                          (selSeeds,seeds) = takeAndDrop (2*n) $ randoms g
+                                          (mutSeeds,_) = takeAndDrop (2*n) seeds
+                                      resEntities <- zipWithM ($) (map (mutation pool p) mutSeeds) $ map (tournamentSelection es) selSeeds
+                                      return $ take n $ catMaybes $ resEntities
 
 -- |Function to perform a single evolution step:
 --
@@ -169,9 +172,9 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                         g = mkStdGen seed
                         [crossSeed,mutSeed] = take 2 $ randoms g
                         -- apply crossover and mutation
-                        crossEnts = performCrossover crossPar cn crossSeed pool combo
-                        mutEnts = performMutation mutPar mn mutSeed pool combo
-                        -- new population: crossovered + mutated entities
+                    crossEnts <- performCrossover crossPar cn crossSeed pool combo
+                    mutEnts <- performMutation mutPar mn mutSeed pool combo
+                    let -- new population: crossovered + mutated entities
                         pop' = crossEnts ++ mutEnts
                         -- new archive: best entities so far
                         archive' = take an $ nub $ sortBy (comparing fst) $ combo
