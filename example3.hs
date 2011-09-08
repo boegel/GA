@@ -11,10 +11,9 @@
 
 import Data.Char (chr,ord)
 import Data.List (foldl')
-import System (getArgs)
 import System.Random (mkStdGen, random, randoms)
 
-import GA (Entity(..), GAConfig(..), evolveChkpt)
+import GA (Entity(..), GAConfig(..), evolveVerbose)
 
 -- efficient sum
 sum' :: (Num a) => [a] -> a
@@ -73,30 +72,15 @@ instance Entity Sentence Target [Letter] IO where
 
 main :: IO() 
 main = do
-        args <- getArgs
-        if length args /= 8 
-           then error $ "Usage: <pop. size> <archive size> <max. # generations> " ++
-                               "<crossover rate> <mutation rate> " ++
-                               "<crossover parameter> <mutation parameter> " ++
-                               "<enable checkpointing (bool)>"
-           else return ()
-        let ps  = read $ args !! 0
-            as  = read $ args !! 1
-            mg  = read $ args !! 2
-            cr  = read $ args !! 3
-            mr  = read $ args !! 4
-            cp  = read $ args !! 5
-            mp  = read $ args !! 6
-            chk = read $ args !! 7
         let cfg = GAConfig 
-                    ps -- population size
-                    as -- archive size (best entities to keep track of)
-                    mg -- maximum number of generations
-                    cr -- crossover rate (% of new entities generated with crossover)
-                    mr -- mutation rate (% of new entities generated with mutation)
-                    cp -- parameter for crossover operator (not used here)
-                    mp -- parameter for mutation operator (ratio of replaced letters)
-                    chk -- whether or not to use checkpointing
+                    100 -- population size
+                    25 -- archive size (best entities to keep track of)
+                    300 -- maximum number of generations
+                    0.8 -- crossover rate (% of new entities generated with crossover)
+                    0.2 -- mutation rate (% of new entities generated with mutation)
+                    0.0 -- parameter for crossover operator (not used here)
+                    0.2 -- parameter for mutation operator (ratio of replaced letters)
+                    False -- whether or not to use checkpointing
 
             g = mkStdGen 0 -- random generator
 
@@ -104,6 +88,6 @@ main = do
             charsPool = map chr [32..126]
         -- Do the evolution!
         -- Note: if either of the last two arguments is unused, just use () as a value
-        e <- evolveChkpt g cfg charsPool "Hello World!" :: IO String
+        e <- evolveVerbose g cfg charsPool "Hello World!" :: IO String
         
         putStrLn $ "best entity: " ++ (show e)

@@ -9,7 +9,7 @@
 module GA (Entity(..), 
            GAConfig(..), 
            evolve, 
-           evolveChkpt) where
+           evolveVerbose) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.List (sortBy, nub)
@@ -289,7 +289,7 @@ evolve g cfg pool dataset = do
                 -- initialize
                 (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- if not (withCheckpointing cfg)
                                                                            then initGA g cfg pool
-                                                                           else error "(evolve) No checkpointing support (requires liftIO); see evolveChkpt."
+                                                                           else error "(evolve) No checkpointing support (requires liftIO); see evolveVerbose."
                 -- do the evolution
                 (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
@@ -313,12 +313,12 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
 restoreFromCheckpoint _ [] = return Nothing
 
 -- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
-evolveChkpt :: (Entity e d p m, MonadIO m) => StdGen -- ^ random generator
+evolveVerbose :: (Entity e d p m, MonadIO m) => StdGen -- ^ random generator
                                            -> GAConfig -- ^ configuration for genetic algorithm
                                            -> p -- ^ pool for generating random entities (and also for crossover/mutation)
                                            -> d -- ^ dataset required to score entities
                                            -> m e -- ^ result is best entity found through evolution
-evolveChkpt g cfg pool dataset = do
+evolveVerbose g cfg pool dataset = do
                                    -- initialize
                                    (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- initGA g cfg pool
                                    let checkpointing = withCheckpointing cfg
