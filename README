@@ -46,7 +46,7 @@ the string "Hello World!").
 
 Example command line (with checkpointing enabled):
 
-	./example1 100 25 200 0.8 0.2 0.0 0.2 True +RTS -M1G
+	./example1 100 25 300 0.8 0.2 0.0 0.2 True +RTS -M1G
 
 The second example (see example2.hs) evolves an integer number that has
 8 integer divisors, and for which the sum of its divisors equals 96.
