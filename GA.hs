@@ -77,10 +77,10 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
                  return s
 
 -- |A possibly scored entity.
-type ScoredEntity e = (Maybe Double, e)
+type ScoredEntity e = (Double, e)
 
 -- |Scored generation (population and archive).
-type ScoredGen e = ([e],[ScoredEntity e])
+type Generation e = ([e],[ScoredEntity e])
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e d p m) => p -> Int -> [Int] -> ([Int],[e])
@@ -91,10 +91,9 @@ initPop src n seeds = (seeds'', entities)
 
 -- |Score an entity (if it hasn't been already).
 scoreEnt :: (Entity e d p m) => d -> e -> m (ScoredEntity e)
-scoreEnt _ e@(Just _,_) = return e
-scoreEnt dataset x = do 
-                        s <- score x dataset
-                        return (Just s, x)
+scoreEnt dataset e = do 
+                        s <- score e dataset
+                        return (s, e)
 
 -- |Binary tournament selection operator.
 tournamentSelection :: [ScoredEntity e] -> Int -> e
@@ -114,7 +113,7 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
 -- * sort by fitness
 --
 -- * create new population using crossover/mutation
-evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> ScoredGen e -> Int -> m (ScoredGen e)
+evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> Generation e -> Int -> m (Generation e)
 evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     scoredPop <- mapM (scoreEnt dataset) pop
@@ -141,10 +140,10 @@ evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                     return (pop',archive')
 
 -- |Evolution: evaluate generation and continue.
-evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> Int -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolution :: (Entity e d p m) => GAConfig -> Generation e -> (Generation e -> Int -> m (Generation e)) -> [(Int,Int)] -> m (Generation e)
 evolution cfg (pop,archive) step ((_,seed):gss) = do
                                                      newPa@(_,archive') <- step (pop,archive) seed 
-                                                     let (Just fitness, _) = head archive'
+                                                     let (fitness, _) = head archive'
                                                      if fitness == 0.0
                                                         then return newPa
                                                         else evolution cfg newPa step gss
@@ -163,7 +162,7 @@ chkptFileName cfg (gi,seed) = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi)
              (show $ mutationParam cfg)
 
 -- |Checkpoint a single generation.
-checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> ScoredGen e -> IO()
+checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> Generation e -> IO()
 checkpointGen cfg index seed (pop,archive) = do
                                            let txt = show $ (pop,archive)
                                                fn = chkptFileName cfg (index,seed)
@@ -172,10 +171,10 @@ checkpointGen cfg index seed (pop,archive) = do
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> ScoredGen e -> (ScoredGen e -> Int -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> Generation e -> (Generation e -> Int -> m (Generation e)) -> [(Int,Int)] -> m (Generation e)
 evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                           newPa@(_,archive') <- step (pop,archive) seed
-                                                          let (Just fitness, e) = head archive'
+                                                          let (fitness, e) = head archive'
                                                           -- checkpoint generation if desired
                                                           liftIO $ if (withCheckpointing cfg)
                                                                       then checkpointGen cfg gi seed newPa
@@ -216,7 +215,13 @@ initGA g cfg src = (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
     seeds = take (maxGenerations cfg) rs'
     -- seeds per generation
     genSeeds = zip [0..] seeds
- 
+
+-- |Extract the best entity from an archive.
+extractBest :: [ScoredEntity e] -> e
+extractBest archive 
+	| null archive = error $ "(extractBest) empty archive!"
+	| otherwise    = snd $ head archive 
+
 -- |Do the evolution!
 evolve :: (Entity e d p m) => StdGen -> GAConfig -> p -> d -> m e
 evolve g cfg src dataset = do
@@ -228,13 +233,11 @@ evolve g cfg src dataset = do
                 (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
                
-	        -- return best entity 
-                if null resArchive
-                  then error $ "(evolve) empty archive!"
-                  else return $ snd $ head resArchive
+	        -- return best entity
+	        return (extractBest resArchive)
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
-restoreFromCheckpoint :: (Entity e d p m) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,ScoredGen e))
+restoreFromCheckpoint :: (Entity e d p m) => GAConfig -> [(Int,Int)] -> IO (Maybe (Int,Generation e))
 restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                   chkptFound <- doesFileExist fn
                                                   if chkptFound 
@@ -269,6 +272,4 @@ evolveChkpt g cfg src dataset = do
                                    (_,resArchive) <- evolutionChkpt cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
                
 				   -- return best entity 
-                                   if null resArchive
-                                      then error $ "(evolve) empty archive!"
-                                      else return $ snd $ head resArchive
+                                   return (extractBest resArchive)
