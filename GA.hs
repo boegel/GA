@@ -72,15 +72,18 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   -- |Mutation operator: mutate an entity into a new entity.
   mutation :: p -> Float -> Int -> e -> m (Maybe e)
   -- |Score an entity (lower is better).
-  score' :: e -> d -> Double -- ^ pure scoring function
-  score' _ _ = undefined
-  score :: e -> d -> m Double -- ^ monadic scoring function
-  score e d = do 
-                 let s = score' e d
-                 return s
+  score' :: d -> e -> (Maybe Double) -- ^ pure scoring function
+  score' _ _ = error "(GA) score' is not defined, nor is score or scorePop!"
+  score :: d -> e -> m (Maybe Double) -- ^ monadic scoring function
+  score d e = do 
+                 return $ score' d e
+  -- |Score an entire population of entites (default definition).
+  scorePop :: d -> [e] -> m [Maybe Double]
+  scorePop _ es = do
+                    return $ map (const Nothing) es
 
 -- |A possibly scored entity.
-type ScoredEntity e = (Double, e)
+type ScoredEntity e = (Maybe Double, e)
 
 -- |Scored generation (population and archive).
 type Generation e = ([e],[ScoredEntity e])
@@ -95,14 +98,6 @@ initPop pool n seed = do
                              seeds = take n $ randoms g
 			 entities <- mapM (genRandom pool) seeds
                          return entities
-
--- |Score an entity (if it hasn't been already).
-scoreEnt :: (Entity e d p m) => d -- ^ dataset for scoring entity
-                             -> e -- ^ entity to score
-                             -> m (ScoredEntity e) -- ^ scored entity
-scoreEnt dataset e = do 
-                        s <- score e dataset
-                        return (s, e)
 
 -- |Binary tournament selection operator.
 tournamentSelection :: [ScoredEntity e] -- ^ set of entities to run selection on
@@ -164,8 +159,14 @@ evolutionStep :: (Entity e d p m) => p -- ^ pool for crossover/mutation
                                   -> m (Generation e) -- ^ next generation
 evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
-                    scoredPop <- mapM (scoreEnt dataset) pop
+                    -- try to score in a single go first
+                    scores <- scorePop dataset pop
+                    scores' <- if all isJust scores
+                                     then return scores
+                                     -- score one by one if scorePop failed
+                                     else mapM (score dataset) pop
                     let 
+                        scoredPop = zip scores' pop
                         -- combine with archive for selection
                         combo = scoredPop ++ archive
                         -- split seeds for crossover selection/seeds, mutation selection/seeds
@@ -188,7 +189,7 @@ evolution :: (Entity e d p m) => GAConfig -- ^ configuration for the genetic alg
                               -> m (Generation e) -- ^ resulting generation
 evolution cfg generation step ((_,seed):gss) = do
                                                      nextGeneration <- step generation seed 
-                                                     let (fitness, _) = (head $ snd nextGeneration)
+                                                     let (Just fitness, _) = (head $ snd nextGeneration)
                                                      if fitness == 0.0
                                                         then return nextGeneration
                                                         else evolution cfg nextGeneration step gss
@@ -229,7 +230,7 @@ evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -- ^ configuration for
                                               -> m (Generation e) -- ^ resulting generation
 evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                           newPa@(_,archive') <- step (pop,archive) seed
-                                                          let (fitness, e) = head archive'
+                                                          let (Just fitness, e) = head archive'
                                                           -- checkpoint generation if desired
                                                           liftIO $ if (withCheckpointing cfg)
                                                                       then checkpointGen cfg gi seed newPa

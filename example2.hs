@@ -61,7 +61,7 @@ instance Entity Number () () Identity where
 
   -- score: how closely does the given number match the criteria?
   -- NOTE: lower is better
-  score' e _ = fromIntegral $ s + n
+  score' _ e = Just $ fromIntegral $ s + n
     where
       ds = divisors e
       s = abs $ (-) 96 $ sum' ds
