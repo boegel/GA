@@ -8,29 +8,15 @@
 -- version: 0.2
 module GA (Entity(..), 
            GAConfig(..), 
-           ShowEntity(..), 
            evolve, 
            evolveChkpt) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.List (intersperse, sortBy, nub)
+import Data.List (sortBy, nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Ord (comparing)
-import Debug.Trace (trace)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.Random (StdGen, mkStdGen, randoms)
-
--- DEBUGGING
-
--- |Enable/disable debugging output (hard coded).
-debug :: Bool
-debug = False
-
--- |Return value with debugging output if debugging is enabled.
-dbg :: String -> a -> a
-dbg str x = if debug
-                then trace str x
-                else x 
 
 -- |Currify a list of elements into tuples.
 currify :: [a] -> [(a,a)]
@@ -75,7 +61,7 @@ data GAConfig = GAConfig {
 --
 -- * some kind of pool used to generate random entities, e.g. a Hoogle database (c)
 --
-class (Eq e, Read e, Show e, ShowEntity e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
+class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
   -- |Generate a random entity.
   genRandom :: p -> Int -> e
   -- |Crossover operator: combine two entities into a new entity.
@@ -95,19 +81,6 @@ type ScoredEntity e = (Maybe Double, e)
 
 -- |Scored generation (population and archive).
 type ScoredGen e = ([ScoredEntity e],[ScoredEntity e])
-
--- |Type class for pretty printing an entity instead of just using the default show implementation.
-class ShowEntity e where
-  -- |Show an entity.
-  showEntity :: e -> String
-
--- |Show a scored entity.
-showScoredEntity :: ShowEntity e => ScoredEntity e -> String
-showScoredEntity (s,e) = "(" ++ show s ++ ", " ++ showEntity e ++ ")"
-
--- |Show a list of scored entities.
-showScoredEntities :: ShowEntity e => [ScoredEntity e] -> String
-showScoredEntities es = ("["++) . (++"]") . concat . intersperse "," $ map showScoredEntity es
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e d p m) => p -> Int -> [Int] -> ([Int],[e])
@@ -141,8 +114,8 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
 -- * sort by fitness
 --
 -- * create new population using crossover/mutation
-evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> ScoredGen e -> (Int,Int) -> m (ScoredGen e)
-evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) = do 
+evolutionStep :: (Entity e d p m) => p -> d -> (Int,Int,Int) -> (Float,Float) -> ScoredGen e -> Int -> m (ScoredGen e)
+evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     scoredPop <- mapM (scoreEnt dataset) pop
                     let 
@@ -165,18 +138,12 @@ evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) (gi,seed) =
                         pop' = zip (repeat Nothing) $ crossEnts ++ mutEnts
                         -- new archive: best entities so far
                         archive' = take an $ nub $ sortBy (comparing fst) $ filter (isJust . fst) combo
-                    return $ dbg (   "\n\ngeneration " ++ (show gi) ++ ": \n\n" 
-                                    ++ "  scored population: " ++ (showScoredEntities scoredPop) ++ "\n\n"
-                                    ++ "  archive: " ++ (showScoredEntities archive') ++ "\n\n"
-                                    ++ "  archive fitnesses: " ++ (show $ map fst archive') ++ "\n\n"
-                                    ++ "  generated " ++ show (length pop') ++ " entities\n\n"
-                                    ++ (replicate 150 '='))
-                             (pop',archive')
+                    return (pop',archive')
 
 -- |Evolution: evaluate generation and continue.
-evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
-evolution cfg (pop,archive) step ((gi,seed):gss) = do
-                                                     newPa@(_,archive') <- step (pop,archive) (gi,seed) 
+evolution :: (Entity e d p m) => GAConfig -> ScoredGen e -> (ScoredGen e -> Int -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolution cfg (pop,archive) step ((_,seed):gss) = do
+                                                     newPa@(_,archive') <- step (pop,archive) seed 
                                                      let (Just fitness, _) = head archive'
                                                      if fitness == 0.0
                                                         then return newPa
@@ -186,7 +153,7 @@ evolution _ (pop,archive) _              []    = return (pop,archive)
 
 -- |Generate file name for checkpoint.
 chkptFileName :: GAConfig -> (Int,Int) -> FilePath
-chkptFileName cfg (gi,seed) = dbg fn fn
+chkptFileName cfg (gi,seed) = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi) ++ "-seed-" ++ (show seed) ++ ".chk"
   where
     cfgTxt = (show $ popSize cfg) ++ "-" ++ 
              (show $ archiveSize cfg) ++ "-" ++
@@ -194,23 +161,20 @@ chkptFileName cfg (gi,seed) = dbg fn fn
              (show $ mutationRate cfg) ++ "-" ++
              (show $ crossoverParam cfg) ++ "-" ++
              (show $ mutationParam cfg)
-    fn = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi) ++ "-seed-" ++ (show seed) ++ ".chk"
 
 -- |Checkpoint a single generation.
 checkpointGen :: (Entity e d p m) => GAConfig -> Int -> Int -> ScoredGen e -> IO()
 checkpointGen cfg index seed (pop,archive) = do
                                            let txt = show $ (pop,archive)
                                                fn = chkptFileName cfg (index,seed)
-                                           if debug 
-                                              then putStrLn $ "writing checkpoint for gen " ++ (show index) ++ " to " ++ fn
-                                              else return ()
+                                           putStrLn $ "writing checkpoint for gen " ++ (show index) ++ " to " ++ fn
                                            createDirectoryIfMissing True "checkpoints"
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> ScoredGen e -> (ScoredGen e -> (Int,Int) -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
+evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -> ScoredGen e -> (ScoredGen e -> Int -> m (ScoredGen e)) -> [(Int,Int)] -> m (ScoredGen e)
 evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
-                                                          newPa@(_,archive') <- step (pop,archive) (gi,seed)
+                                                          newPa@(_,archive') <- step (pop,archive) seed
                                                           let (Just fitness, e) = head archive'
                                                           -- checkpoint generation if desired
                                                           liftIO $ if (withCheckpointing cfg)
@@ -276,7 +240,7 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                   chkptFound <- doesFileExist fn
                                                   if chkptFound 
                                                     then do
-                                                          txt <- dbg ("chk for gen. " ++ (show gi) ++ " found") readFile fn
+                                                          txt <- readFile fn
                                                           return $ Just (gi, read txt)
                                                     else restoreFromCheckpoint cfg genSeeds
   where
@@ -297,11 +261,9 @@ evolveChkpt g cfg src dataset = do
 
                                    let (gi,(pop',archive')) = if isJust restored
                                           -- restored pop/archive from checkpoint
-                                          then dbg ("restored from checkpoint!\n\n") $ fromJust restored 
+                                          then fromJust restored 
                                           -- restore failed, new population and empty archive
-                                          else dbg (if checkpointing then "no checkpoint found...\n\n"
-                                                                     else "checkpoints ignored...\n\n") 
-                                                         (-1, (zip (repeat Nothing) pop, []))
+                                          else (-1, (zip (repeat Nothing) pop, []))
                                        -- filter out seeds from past generations
                                        genSeeds' = filter ((>gi) . fst) genSeeds
                                    -- do the evolution

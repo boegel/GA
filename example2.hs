@@ -15,7 +15,7 @@ import Data.List (foldl')
 import System (getArgs)
 import System.Random (mkStdGen, random)
 
-import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
+import GA (Entity(..), GAConfig(..), evolve)
 
 --
 -- HELPER FUNCTIONS
@@ -67,9 +67,6 @@ instance Entity Number () () Identity where
       ds = divisors e
       s = abs $ (-) 96 $ sum' ds
       n = abs $ (-) 8 $ length ds
-
-instance ShowEntity Number where 
-  showEntity = show
 
 main :: IO() 
 main = do

@@ -15,7 +15,7 @@ import Data.List (foldl')
 import System (getArgs)
 import System.Random (mkStdGen, random, randoms)
 
-import GA (Entity(..), GAConfig(..), ShowEntity(..), evolve)
+import GA (Entity(..), GAConfig(..), evolve)
 
 -- efficient sum
 sum' :: (Num a) => [a] -> a
@@ -71,9 +71,6 @@ instance Entity Sentence Target [Letter] Identity where
       x' = map ord x
       d = sum' $ map abs $ zipWith (-) e' x'
       l = abs $ (length x) - (length e)
-
-instance ShowEntity Sentence where 
-  showEntity = show
 
 main :: IO() 
 main = do
