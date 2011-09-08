@@ -80,7 +80,7 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
 type ScoredEntity e = (Maybe Double, e)
 
 -- |Scored generation (population and archive).
-type ScoredGen e = ([ScoredEntity e],[ScoredEntity e])
+type ScoredGen e = ([e],[ScoredEntity e])
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e d p m) => p -> Int -> [Int] -> ([Int],[e])
@@ -90,11 +90,11 @@ initPop src n seeds = (seeds'', entities)
     entities = map (genRandom src) seeds'
 
 -- |Score an entity (if it hasn't been already).
-scoreEnt :: (Entity e d p m) => d -> ScoredEntity e -> m (ScoredEntity e)
+scoreEnt :: (Entity e d p m) => d -> e -> m (ScoredEntity e)
 scoreEnt _ e@(Just _,_) = return e
-scoreEnt dataset (Nothing,x) = do 
-                            s <- score x dataset
-                            return (Just s, x)
+scoreEnt dataset x = do 
+                        s <- score x dataset
+                        return (Just s, x)
 
 -- |Binary tournament selection operator.
 tournamentSelection :: [ScoredEntity e] -> Int -> e
@@ -135,9 +135,9 @@ evolutionStep src dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                         mutSel = map (tournamentSelection combo) mutSelSeeds
                         mutEnts = take cn $ catMaybes $ zipWith ($) (map (mutation src mutPar) mutSeeds) mutSel
                         -- new population: crossovered + mutated entities
-                        pop' = zip (repeat Nothing) $ crossEnts ++ mutEnts
+                        pop' = crossEnts ++ mutEnts
                         -- new archive: best entities so far
-                        archive' = take an $ nub $ sortBy (comparing fst) $ filter (isJust . fst) combo
+                        archive' = take an $ nub $ sortBy (comparing fst) $ combo
                     return (pop',archive')
 
 -- |Evolution: evaluate generation and continue.
@@ -224,9 +224,8 @@ evolve g cfg src dataset = do
                 let (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) = if not (withCheckpointing cfg)
                                                                               then initGA g cfg src
                                                                               else error "(evolve) No checkpointing support because it requires liftIO; see evolveChkpt."
-                    (pop',archive') = (zip (repeat Nothing) pop, [])
                 -- do the evolution
-                (_,resArchive) <- evolution cfg (pop',archive') (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
+                (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep src dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
                
 	        -- return best entity 
@@ -263,7 +262,7 @@ evolveChkpt g cfg src dataset = do
                                           -- restored pop/archive from checkpoint
                                           then fromJust restored 
                                           -- restore failed, new population and empty archive
-                                          else (-1, (zip (repeat Nothing) pop, []))
+                                          else (-1, (pop, []))
                                        -- filter out seeds from past generations
                                        genSeeds' = filter ((>gi) . fst) genSeeds
                                    -- do the evolution
