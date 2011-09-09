@@ -106,10 +106,9 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   --
   -- Default implementation returns Nothing for all entities.
   scorePop :: d -- ^ dataset to score entities
-           -> [ScoredEntity e] -- ^ current archive entities
            -> [e] -- ^ population of entities to score
            -> m [Maybe Double] -- ^ scores for population entities
-  scorePop _ _ es = do
+  scorePop _ es = do
                              return $ map (const Nothing) es
 
 -- |A possibly scored entity.
@@ -190,7 +189,7 @@ evolutionStep :: (Entity e d p m) => p -- ^ pool for crossover/mutation
 evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     -- try to score in a single go first
-                    scores <- scorePop dataset archive pop
+                    scores <- scorePop dataset pop
                     scores' <- if all isJust scores
                                      then return scores
                                      -- score one by one if scorePop failed
