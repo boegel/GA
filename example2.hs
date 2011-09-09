@@ -83,6 +83,7 @@ main = do
 
         -- Do the evolution!
         -- two last parameters (pool for generating new entities and extra data to score an entity) are unused in this example
-            (Identity e) = evolve g cfg () () :: Identity Int
+            (Identity es) = evolve g cfg () ()
+            e = snd $ head es :: Int
         
         putStrLn $ "best entity: " ++ (show e)

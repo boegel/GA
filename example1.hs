@@ -89,6 +89,7 @@ main = do
             charsPool = map chr [32..126]
         -- Do the evolution!
         -- Note: if either of the last two arguments is unused, just use () as a value
-            (Identity e) = evolve g cfg charsPool "Hello World!" :: Identity String
+            (Identity es) = evolve g cfg charsPool "Hello World!"
+            e = snd $ head es :: String
         
         putStrLn $ "best entity: " ++ (show e)

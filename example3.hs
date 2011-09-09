@@ -88,6 +88,7 @@ main = do
             charsPool = map chr [32..126]
         -- Do the evolution!
         -- Note: if either of the last two arguments is unused, just use () as a value
-        e <- evolveVerbose g cfg charsPool "Hello World!" :: IO String
+        es <- evolveVerbose g cfg charsPool "Hello World!"
+        let e = snd $ head es :: String
         
         putStrLn $ "best entity: " ++ (show e)

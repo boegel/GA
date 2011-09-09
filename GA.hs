@@ -56,31 +56,61 @@ data GAConfig = GAConfig {
 
 -- |Type class for entities that represent a candidate solution.
 --
--- Three parameters:
+-- Four parameters:
 --
--- * data structure representing an entity (a)
+-- * data structure representing an entity (e)
 --
--- * data used to score an entity, e.g. a list of numbers (b)
+-- * data used to score an entity, e.g. a list of numbers (d)
 --
--- * some kind of pool used to generate random entities, e.g. a Hoogle database (c)
+-- * some kind of pool used to generate random entities, e.g. a Hoogle database (p)
+--
+-- * monad to operate in (m)
 --
 class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
   -- |Generate a random entity.
-  genRandom :: p -> Int -> m e
+  genRandom :: p -- ^ pool for generating random entities
+            -> Int -- ^ random seed
+            -> m e -- ^ random entity
+
   -- |Crossover operator: combine two entities into a new entity.
-  crossover :: p -> Float -> Int -> e -> e -> m (Maybe e)
+  crossover :: p -- ^ entity pool
+            -> Float -- ^ crossover parameter
+            -> Int -- ^ random seed
+            -> e -- ^ first entity
+            -> e -- ^ second entity
+            -> m (Maybe e) -- ^ entity resulting from crossover
+
   -- |Mutation operator: mutate an entity into a new entity.
-  mutation :: p -> Float -> Int -> e -> m (Maybe e)
-  -- |Score an entity (lower is better).
-  score' :: d -> e -> (Maybe Double) -- ^ pure scoring function
+  mutation :: p -- ^ entity pool
+           -> Float -- ^ mutation parameter
+           -> Int -- ^ random seed
+           -> e -- ^ entity to mutate
+           -> m (Maybe e) -- ^ mutated entity
+
+  -- |Score an entity (lower is better), pure version.
+  score' :: d -- ^ dataset for scoring entities
+         -> e -- ^ entity to score
+         -> (Maybe Double) -- ^ entity score
   score' _ _ = error "(GA) score' is not defined, nor is score or scorePop!"
-  score :: d -> e -> m (Maybe Double) -- ^ monadic scoring function
+
+  -- |Score an entity (lower is better), monadic version.
+  --
+  -- Default implementation hoist score' into monad.
+  score :: d -- ^ dataset for scoring entities
+        -> e -- ^ entity to score
+        -> m (Maybe Double) -- ^ entity score
   score d e = do 
                  return $ score' d e
+
   -- |Score an entire population of entites (default definition).
-  scorePop :: d -> [e] -> m [Maybe Double]
-  scorePop _ es = do
-                    return $ map (const Nothing) es
+  --
+  -- Default implementation returns Nothing for all entities.
+  scorePop :: d -- ^ dataset to score entities
+           -> [ScoredEntity e] -- ^ current archive entities
+           -> [e] -- ^ population of entities to score
+           -> m [Maybe Double] -- ^ scores for population entities
+  scorePop _ _ es = do
+                             return $ map (const Nothing) es
 
 -- |A possibly scored entity.
 type ScoredEntity e = (Maybe Double, e)
@@ -96,7 +126,7 @@ initPop :: (Entity e d p m) => p -- ^ pool for generating random entities
 initPop pool n seed = do
                          let g = mkStdGen seed
                              seeds = take n $ randoms g
-			 entities <- mapM (genRandom pool) seeds
+                         entities <- mapM (genRandom pool) seeds
                          return entities
 
 -- |Binary tournament selection operator.
@@ -160,7 +190,7 @@ evolutionStep :: (Entity e d p m) => p -- ^ pool for crossover/mutation
 evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     -- try to score in a single go first
-                    scores <- scorePop dataset pop
+                    scores <- scorePop dataset archive pop
                     scores' <- if all isJust scores
                                      then return scores
                                      -- score one by one if scorePop failed
@@ -276,19 +306,12 @@ initGA g cfg pool = do
 
                       return (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
 
--- |Extract the best entity from an archive.
-extractBest :: [ScoredEntity e] -- ^ entity archive
-            -> e -- ^ result is best entity from archive (lowest fitness)
-extractBest archive 
-	| null archive = error $ "(extractBest) empty archive!"
-	| otherwise    = snd $ head $ sortBy (comparing fst) archive 
-
 -- |Do the evolution!
 evolve :: (Entity e d p m) => StdGen -- ^ random generator
                            -> GAConfig -- ^ configuration for genetic algorithm
                            -> p -- ^ pool for generating random entities (and also for crossover/mutation)
                            -> d -- ^ dataset required to score entities
-                           -> m e -- ^ result is best entity found through evolution
+                           -> m [(Maybe Double,e)] -- ^ result is list of best entities, with scores
 evolve g cfg pool dataset = do
                 -- initialize
                 (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- if not (withCheckpointing cfg)
@@ -298,8 +321,8 @@ evolve g cfg pool dataset = do
                 (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
                
-	        -- return best entity
-	        return (extractBest resArchive)
+                -- return best entity
+                return resArchive
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
 restoreFromCheckpoint :: (Entity e d p m) => GAConfig -- ^ configuration for genetic algorithm
@@ -318,10 +341,10 @@ restoreFromCheckpoint _ [] = return Nothing
 
 -- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
 evolveVerbose :: (Entity e d p m, MonadIO m) => StdGen -- ^ random generator
-                                           -> GAConfig -- ^ configuration for genetic algorithm
-                                           -> p -- ^ pool for generating random entities (and also for crossover/mutation)
-                                           -> d -- ^ dataset required to score entities
-                                           -> m e -- ^ result is best entity found through evolution
+                                             -> GAConfig -- ^ configuration for genetic algorithm
+                                             -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                                             -> d -- ^ dataset required to score entities
+                                             -> m [(Maybe Double,e)] -- ^ result is list of best entities, with scores
 evolveVerbose g cfg pool dataset = do
                                    -- initialize
                                    (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- initGA g cfg pool
@@ -342,5 +365,5 @@ evolveVerbose g cfg pool dataset = do
                                    -- do the evolution
                                    (_,resArchive) <- evolutionChkpt cfg (pop',archive') (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
                
-				   -- return best entity 
-                                   return (extractBest resArchive)
+                                   -- return best entity 
+                                   return resArchive
