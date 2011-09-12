@@ -66,7 +66,12 @@ data GAConfig = GAConfig {
 --
 -- * monad to operate in (m)
 --
-class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m where
+class (Eq e, Read e, Show e, 
+       Ord s, Read s, Show s, 
+       Monad m)
+   => Entity e s d p m 
+    | e -> s, e -> d, e -> p, e -> m where
+
   -- |Generate a random entity.
   genRandom :: p -- ^ pool for generating random entities
             -> Int -- ^ random seed
@@ -90,7 +95,7 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   -- |Score an entity (lower is better), pure version.
   score' :: d -- ^ dataset for scoring entities
          -> e -- ^ entity to score
-         -> (Maybe Double) -- ^ entity score
+         -> (Maybe s) -- ^ entity score
   score' _ _ = error "(GA) score' is not defined, nor is score or scorePop!"
 
   -- |Score an entity (lower is better), monadic version.
@@ -98,7 +103,7 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   -- Default implementation hoist score' into monad.
   score :: d -- ^ dataset for scoring entities
         -> e -- ^ entity to score
-        -> m (Maybe Double) -- ^ entity score
+        -> m (Maybe s) -- ^ entity score
   score d e = do 
                  return $ score' d e
 
@@ -107,18 +112,23 @@ class (Eq e, Read e, Show e, Monad m) => Entity e d p m | e -> d, e -> p, e -> m
   -- Default implementation returns Nothing for all entities.
   scorePop :: d -- ^ dataset to score entities
            -> [e] -- ^ population of entities to score
-           -> m [Maybe Double] -- ^ scores for population entities
+           -> m [Maybe s] -- ^ scores for population entities
   scorePop _ es = do
                              return $ map (const Nothing) es
 
+  -- |Determines whether a score indicates a perfect entity.
+  isPerfect :: s -- ^ score 
+               -> Bool -- ^ whether or not score indicates a perfect entity
+
+
 -- |A possibly scored entity.
-type ScoredEntity e = (Maybe Double, e)
+type ScoredEntity e s = (Maybe s, e)
 
 -- |Scored generation (population and archive).
-type Generation e = ([e],[ScoredEntity e])
+type Generation e s = ([e],[ScoredEntity e s])
 
 -- |Initialize: generate initial population.
-initPop :: (Entity e d p m) => p -- ^ pool for generating random entities
+initPop :: (Entity e s d p m) => p -- ^ pool for generating random entities
                             -> Int -- ^ population size
                             -> Int -- ^ random seed
                             -> m [e] -- ^ initialized population and remaining seeds
@@ -129,9 +139,9 @@ initPop pool n seed = do
                          return entities
 
 -- |Binary tournament selection operator.
-tournamentSelection :: [ScoredEntity e] -- ^ set of entities to run selection on
-                    -> Int -- ^ random seed
-                    -> e -- ^ selected entity
+tournamentSelection :: (Ord s) => [ScoredEntity e s] -- ^ set of entities to run selection on
+                               -> Int -- ^ random seed
+                               -> e -- ^ selected entity
 tournamentSelection xs seed = if s1 < s2 then x1 else x2
   where
     len = length xs
@@ -140,11 +150,11 @@ tournamentSelection xs seed = if s1 < s2 then x1 else x2
     [(s1,x1),(s2,x2)] = map ((!!) xs) is
 
 -- |Apply crossover to obtain new entites.
-performCrossover :: (Entity e d p m) => Float -- ^ crossover parameter
+performCrossover :: (Entity e s d p m) => Float -- ^ crossover parameter
                                      -> Int -- ^ number of entities to generate
                                      -> Int -- ^ random seed
                                      -> p -- ^ pool for combining entities
-                                     -> [ScoredEntity e] -- ^ set of entities to run crossover on
+                                     -> [ScoredEntity e s] -- ^ set of entities to run crossover on
                                      -> m [e] -- combined entities
 performCrossover p n seed pool es = do 
                                        let g = mkStdGen seed
@@ -155,11 +165,11 @@ performCrossover p n seed pool es = do
                                        return $ take n $ catMaybes $ resEntities
 
 -- |Apply mutation to obtain new entites.
-performMutation :: (Entity e d p m) => Float -- ^ mutation parameter
+performMutation :: (Entity e s d p m) => Float -- ^ mutation parameter
                                     -> Int -- ^ number of entities to generate
                                     -> Int -- ^ random seed
                                     -> p -- ^ pool for mutating entities
-                                    -> [ScoredEntity e] -- ^ set of entities to run mutation on
+                                    -> [ScoredEntity e s] -- ^ set of entities to run mutation on
                                     -> m [e] -- mutated entities
 performMutation p n seed pool es = do 
                                       let g = mkStdGen seed
@@ -179,13 +189,13 @@ performMutation p n seed pool es = do
 -- * create new population using crossover/mutation
 --
 -- * retain best scoring entities in the archive
-evolutionStep :: (Entity e d p m) => p -- ^ pool for crossover/mutation
+evolutionStep :: (Entity e s d p m) => p -- ^ pool for crossover/mutation
                                   -> d -- ^ dataset for scoring entities
                                   -> (Int,Int,Int) -- ^ number of crossover/mutation/archive entities
                                   -> (Float,Float) -- ^ crossover/mutation parameters
-                                  -> Generation e -- ^ current generation
+                                  -> Generation e s -- ^ current generation
                                   -> Int -- ^ seed for next generation
-                                  -> m (Generation e) -- ^ next generation
+                                  -> m (Generation e s) -- ^ next generation
 evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
                     -- score population
                     -- try to score in a single go first
@@ -211,15 +221,15 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                     return (pop',archive')
 
 -- |Evolution: evaluate generation and continue.
-evolution :: (Entity e d p m) => GAConfig -- ^ configuration for the genetic algorithm
-                              -> Generation e -- ^ current generation
-                              -> (Generation e -> Int -> m (Generation e)) -- actual evolution function, which evolves one generation
-                              -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
-                              -> m (Generation e) -- ^ resulting generation
+evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for the genetic algorithm
+                                -> Generation e s -- ^ current generation
+                                -> (Generation e s -> Int -> m (Generation e s)) -- actual evolution function, which evolves one generation
+                                -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
+                                -> m (Generation e s) -- ^ resulting generation
 evolution cfg generation step ((_,seed):gss) = do
                                                      nextGeneration <- step generation seed 
                                                      let (Just fitness, _) = (head $ snd nextGeneration)
-                                                     if fitness == 0.0
+                                                     if isPerfect fitness
                                                         then return nextGeneration
                                                         else evolution cfg nextGeneration step gss
 -- no more gen. indices/seeds => quit
@@ -239,10 +249,10 @@ chkptFileName cfg (gi,seed) = "checkpoints/GA-" ++ cfgTxt ++ "-gen" ++ (show gi)
              (show $ mutationParam cfg)
 
 -- |Checkpoint a single generation.
-checkpointGen :: (Entity e d p m) => GAConfig -- ^ configuraton for genetic algorithm
+checkpointGen :: (Entity e s d p m) => GAConfig -- ^ configuraton for genetic algorithm
                                   -> Int -- ^ generation index
                                   -> Int -- ^ random seed for generation
-                                  -> Generation e -- ^ current generation
+                                  -> Generation e s -- ^ current generation
                                   -> IO() -- ^ writes to file
 checkpointGen cfg index seed (pop,archive) = do
                                            let txt = show $ (pop,archive)
@@ -252,11 +262,11 @@ checkpointGen cfg index seed (pop,archive) = do
                                            writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolutionChkpt :: (Entity e d p m, MonadIO m) => GAConfig -- ^ configuration for genetic algorithm
-                                              -> Generation e -- ^ current generation
-                                              -> (Generation e -> Int -> m (Generation e)) -- actual evolution function, which evolves one generation
+evolutionChkpt :: (Entity e s d p m, MonadIO m) => GAConfig -- ^ configuration for genetic algorithm
+                                              -> Generation e s -- ^ current generation
+                                              -> (Generation e s -> Int -> m (Generation e s)) -- actual evolution function, which evolves one generation
                                               -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
-                                              -> m (Generation e) -- ^ resulting generation
+                                              -> m (Generation e s) -- ^ resulting generation
 evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                           newPa@(_,archive') <- step (pop,archive) seed
                                                           let (Just fitness, e) = head archive'
@@ -266,7 +276,7 @@ evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                                       else return () -- skip checkpoint
                                                           liftIO $ putStrLn $ "best entity (gen. " ++ show gi ++ "): " ++ (show e) ++ " [fitness: " ++ show fitness ++ "]"
                                                           -- check for perfect entity
-                                                          if fitness == 0.0
+                                                          if isPerfect fitness
                                                              then do 
                                                                      liftIO $ putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
                                                                      return newPa
@@ -278,7 +288,7 @@ evolutionChkpt _   (pop,archive)   _           []     = do
                                                            return (pop,archive)
 
 -- |Initialize.
-initGA :: (Entity e d p m) => StdGen  -- ^ random generator
+initGA :: (Entity e s d p m) => StdGen  -- ^ random generator
                            -> GAConfig -- ^ configuration for genetic algorithm
                            -> p -- ^ pool for generating random entities
                            -> m ([e],Int,Int,Int,Float,Float,[(Int,Int)]) -- ^ initialization result
@@ -306,11 +316,11 @@ initGA g cfg pool = do
                       return (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds)
 
 -- |Do the evolution!
-evolve :: (Entity e d p m) => StdGen -- ^ random generator
-                           -> GAConfig -- ^ configuration for genetic algorithm
-                           -> p -- ^ pool for generating random entities (and also for crossover/mutation)
-                           -> d -- ^ dataset required to score entities
-                           -> m [(Maybe Double,e)] -- ^ result is list of best entities, with scores
+evolve :: (Entity e s d p m) => StdGen -- ^ random generator
+                             -> GAConfig -- ^ configuration for genetic algorithm
+                             -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                             -> d -- ^ dataset required to score entities
+                             -> m [ScoredEntity e s] -- ^ result is list of best entities, with scores
 evolve g cfg pool dataset = do
                 -- initialize
                 (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- if not (withCheckpointing cfg)
@@ -324,9 +334,9 @@ evolve g cfg pool dataset = do
                 return resArchive
 
 -- |Try to restore from checkpoint: first checkpoint for which a checkpoint file is found is restored.
-restoreFromCheckpoint :: (Entity e d p m) => GAConfig -- ^ configuration for genetic algorithm
+restoreFromCheckpoint :: (Entity e s d p m) => GAConfig -- ^ configuration for genetic algorithm
                                           -> [(Int,Int)] -- ^ generation indices and random seeds
-                                          -> IO (Maybe (Int,Generation e)) -- ^ result is generation restored from checkpoint (if found, otherwise Nothing)
+                                          -> IO (Maybe (Int,Generation e s)) -- ^ result is generation restored from checkpoint (if found, otherwise Nothing)
 restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
                                                   chkptFound <- doesFileExist fn
                                                   if chkptFound 
@@ -339,11 +349,11 @@ restoreFromCheckpoint cfg ((gi,seed):genSeeds) = do
 restoreFromCheckpoint _ [] = return Nothing
 
 -- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
-evolveVerbose :: (Entity e d p m, MonadIO m) => StdGen -- ^ random generator
+evolveVerbose :: (Entity e s d p m, MonadIO m) => StdGen -- ^ random generator
                                              -> GAConfig -- ^ configuration for genetic algorithm
                                              -> p -- ^ pool for generating random entities (and also for crossover/mutation)
                                              -> d -- ^ dataset required to score entities
-                                             -> m [(Maybe Double,e)] -- ^ result is list of best entities, with scores
+                                             -> m [ScoredEntity e s] -- ^ result is list of best entities, with scores
 evolveVerbose g cfg pool dataset = do
                                    -- initialize
                                    (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- initGA g cfg pool
