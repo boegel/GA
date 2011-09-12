@@ -42,7 +42,7 @@ sum' = foldl' (+) 0
 
 type Number = Int
 
-instance Entity Number () () Identity where
+instance Entity Number Double () () Identity where
  
   -- generate a random entity, i.e. a random integer value 
   genRandom _ seed = return $ (fst $ random $ mkStdGen seed) `mod` 10000
@@ -66,6 +66,10 @@ instance Entity Number () () Identity where
       ds = divisors e
       s = abs $ (-) 96 $ sum' ds
       n = abs $ (-) 8 $ length ds
+
+  -- whether or not a scored entity is perfect
+  isPerfect (_,s) = s == 0.0
+
 
 main :: IO() 
 main = do

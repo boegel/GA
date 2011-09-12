@@ -117,8 +117,8 @@ class (Eq e, Read e, Show e,
                              return $ map (const Nothing) es
 
   -- |Determines whether a score indicates a perfect entity.
-  isPerfect :: s -- ^ score 
-               -> Bool -- ^ whether or not score indicates a perfect entity
+  isPerfect :: (e,s) -- ^ scored entity
+               -> Bool -- ^ whether or not scored entity is a perfect entity
 
 
 -- |A possibly scored entity.
@@ -228,8 +228,8 @@ evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for the genetic a
                                 -> m (Generation e s) -- ^ resulting generation
 evolution cfg generation step ((_,seed):gss) = do
                                                      nextGeneration <- step generation seed 
-                                                     let (Just fitness, _) = (head $ snd nextGeneration)
-                                                     if isPerfect fitness
+                                                     let (Just fitness, e) = (head $ snd nextGeneration)
+                                                     if isPerfect (e,fitness)
                                                         then return nextGeneration
                                                         else evolution cfg nextGeneration step gss
 -- no more gen. indices/seeds => quit
@@ -276,7 +276,7 @@ evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                                       else return () -- skip checkpoint
                                                           liftIO $ putStrLn $ "best entity (gen. " ++ show gi ++ "): " ++ (show e) ++ " [fitness: " ++ show fitness ++ "]"
                                                           -- check for perfect entity
-                                                          if isPerfect fitness
+                                                          if isPerfect (e, fitness)
                                                              then do 
                                                                      liftIO $ putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
                                                                      return newPa

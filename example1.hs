@@ -28,7 +28,7 @@ type Sentence = String
 type Target = String
 type Letter = Char
 
-instance Entity Sentence Target [Letter] Identity where
+instance Entity Sentence Double Target [Letter] Identity where
  
   -- generate a random entity, i.e. a random string
   -- assumption: max. 100 chars, only 'printable' ASCII (first 128)
@@ -70,6 +70,9 @@ instance Entity Sentence Target [Letter] Identity where
       x' = map ord x
       d = sum' $ map abs $ zipWith (-) e' x'
       l = abs $ (length x) - (length e)
+
+  -- whether or not a scored entity is perfect
+  isPerfect (_,s) = s == 0.0
 
 main :: IO() 
 main = do
