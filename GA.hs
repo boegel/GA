@@ -110,11 +110,12 @@ class (Eq e, Read e, Show e,
   -- |Score an entire population of entites (default definition).
   --
   -- Default implementation returns Nothing for all entities.
+  -- FIXME: just return Nothing, not a list of Nothings
   scorePop :: d -- ^ dataset to score entities
+           -> [e] -- ^ universe of known entities
            -> [e] -- ^ population of entities to score
            -> m [Maybe s] -- ^ scores for population entities
-  scorePop _ es = do
-                             return $ map (const Nothing) es
+  scorePop _ _ es = return $ map (const Nothing) es
 
   -- |Determines whether a score indicates a perfect entity.
   isPerfect :: (e,s) -- ^ scored entity
@@ -126,6 +127,9 @@ type ScoredEntity e s = (Maybe s, e)
 
 -- |Scored generation (population and archive).
 type Generation e s = ([e],[ScoredEntity e s])
+
+-- |Universe of scored entities.
+type Universe e s = [ScoredEntity e s]
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e s d p m) => p -- ^ pool for generating random entities
@@ -193,13 +197,15 @@ evolutionStep :: (Entity e s d p m) => p -- ^ pool for crossover/mutation
                                   -> d -- ^ dataset for scoring entities
                                   -> (Int,Int,Int) -- ^ number of crossover/mutation/archive entities
                                   -> (Float,Float) -- ^ crossover/mutation parameters
+                                  -> Universe e s -- ^ universe of known entities
                                   -> Generation e s -- ^ current generation
                                   -> Int -- ^ seed for next generation
-                                  -> m (Generation e s) -- ^ next generation
-evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do 
+                                  -> m (Universe e s, Generation e s) -- ^ next generation
+evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) universe (pop,archive) seed = do 
                     -- score population
                     -- try to score in a single go first
-                    scores <- scorePop dataset pop
+                    let univEnts = map snd universe
+                    scores <- scorePop dataset univEnts pop
                     scores' <- if all isJust scores
                                      then return scores
                                      -- score one by one if scorePop failed
@@ -218,22 +224,25 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) (pop,archive) seed = do
                         pop' = crossEnts ++ mutEnts
                         -- new archive: best entities so far
                         archive' = take an $ nub $ sortBy (comparing fst) $ combo
-                    return (pop',archive')
+                        -- FIXME: construct new universe
+                        universe' = nub $ universe ++ scoredPop
+                    return (universe', (pop',archive'))
 
 -- |Evolution: evaluate generation and continue.
 evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for the genetic algorithm
+                                -> Universe e s -- ^ list of all known entities 
                                 -> Generation e s -- ^ current generation
-                                -> (Generation e s -> Int -> m (Generation e s)) -- actual evolution function, which evolves one generation
+                                -> (Universe e s -> Generation e s -> Int -> m (Universe e s, Generation e s)) -- actual evolution function, which evolves one generation
                                 -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
                                 -> m (Generation e s) -- ^ resulting generation
-evolution cfg generation step ((_,seed):gss) = do
-                                                     nextGeneration <- step generation seed 
-                                                     let (Just fitness, e) = (head $ snd nextGeneration)
+evolution cfg universe gen step ((_,seed):gss) = do
+                                                     (universe',nextGen) <- step universe gen seed 
+                                                     let (Just fitness, e) = (head $ snd nextGen)
                                                      if isPerfect (e,fitness)
-                                                        then return nextGeneration
-                                                        else evolution cfg nextGeneration step gss
+                                                        then return nextGen
+                                                        else evolution cfg universe' nextGen step gss
 -- no more gen. indices/seeds => quit
-evolution _ generation _              []    = return generation
+evolution _ _ gen _              []    = return gen
 
 -- |Generate file name for checkpoint.
 chkptFileName :: GAConfig -- ^ configuration for generation algorithm
@@ -263,12 +272,13 @@ checkpointGen cfg index seed (pop,archive) = do
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
 evolutionChkpt :: (Entity e s d p m, MonadIO m) => GAConfig -- ^ configuration for genetic algorithm
+                                              -> Universe e s -- ^ universe of known entities
                                               -> Generation e s -- ^ current generation
-                                              -> (Generation e s -> Int -> m (Generation e s)) -- actual evolution function, which evolves one generation
+                                              -> (Universe e s -> Generation e s -> Int -> m (Universe e s, Generation e s)) -- ^ actual evolution function, which evolves one generation
                                               -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
                                               -> m (Generation e s) -- ^ resulting generation
-evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
-                                                          newPa@(_,archive') <- step (pop,archive) seed
+evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
+                                                          (universe',newPa@(_,archive')) <- step universe gen seed
                                                           let (Just fitness, e) = head archive'
                                                           -- checkpoint generation if desired
                                                           liftIO $ if (withCheckpointing cfg)
@@ -280,12 +290,12 @@ evolutionChkpt cfg (pop,archive) step ((gi,seed):gss) = do
                                                              then do 
                                                                      liftIO $ putStrLn $ "perfect entity found, finished after " ++ show gi ++ " generations!"
                                                                      return newPa
-                                                             else evolutionChkpt cfg newPa step gss
+                                                             else evolutionChkpt cfg universe' newPa step gss
 
 -- no more gen. indices/seeds => quit
-evolutionChkpt _   (pop,archive)   _           []     = do 
-                                                           liftIO $ putStrLn $ "done evolving!"
-                                                           return (pop,archive)
+evolutionChkpt _ _ gen _ [] = do 
+    liftIO $ putStrLn $ "done evolving!"
+    return gen
 
 -- |Initialize.
 initGA :: (Entity e s d p m) => StdGen  -- ^ random generator
@@ -327,7 +337,7 @@ evolve g cfg pool dataset = do
                                                                            then initGA g cfg pool
                                                                            else error "(evolve) No checkpointing support (requires liftIO); see evolveVerbose."
                 -- do the evolution
-                (_,resArchive) <- evolution cfg (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
+                (_,resArchive) <- evolution cfg [] (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
                 
                
                 -- return best entity
@@ -364,7 +374,7 @@ evolveVerbose g cfg pool dataset = do
                                                         then restoreFromCheckpoint cfg (reverse genSeeds) 
                                                         else return Nothing
 
-                                   let (gi,(pop',archive')) = if isJust restored
+                                   let (gi,gen) = if isJust restored
                                           -- restored pop/archive from checkpoint
                                           then fromJust restored 
                                           -- restore failed, new population and empty archive
@@ -372,7 +382,9 @@ evolveVerbose g cfg pool dataset = do
                                        -- filter out seeds from past generations
                                        genSeeds' = filter ((>gi) . fst) genSeeds
                                    -- do the evolution
-                                   (_,resArchive) <- evolutionChkpt cfg (pop',archive') (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
+                                   (_,resArchive) <- evolutionChkpt cfg [] gen (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
                
                                    -- return best entity 
                                    return resArchive
+
+-- FIXME: implement random search
