@@ -114,8 +114,8 @@ class (Eq e, Read e, Show e,
   scorePop :: d -- ^ dataset to score entities
            -> [e] -- ^ universe of known entities
            -> [e] -- ^ population of entities to score
-           -> m [Maybe s] -- ^ scores for population entities
-  scorePop _ _ es = return $ map (const Nothing) es
+           -> m (Maybe [Maybe s]) -- ^ scores for population entities
+  scorePop _ _ _ = return Nothing
 
   -- |Determines whether a score indicates a perfect entity.
   isPerfect :: (e,s) -- ^ scored entity
@@ -206,10 +206,10 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) universe (pop,archive) s
                     -- try to score in a single go first
                     let univEnts = map snd universe
                     scores <- scorePop dataset univEnts pop
-                    scores' <- if all isJust scores
-                                     then return scores
-                                     -- score one by one if scorePop failed
-                                     else mapM (score dataset) pop
+                    scores' <- case scores of
+                                 (Just ss) -> return ss
+                                 -- score one by one if scorePop failed
+                                 Nothing   -> mapM (score dataset) pop
                     let 
                         scoredPop = zip scores' pop
                         -- combine with archive for selection
