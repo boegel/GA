@@ -77,17 +77,18 @@ main = do
                     20 -- population size
                     10 -- archive size (best entities to keep track of)
                     100 -- maximum number of generations
-                    0.8 -- crossover rate (% of new entities generated with crossover)
-                    0.2 -- mutation rate (% of new entities generated with mutation)
-                    0.0 -- parameter for crossover operator (not used here)
-                    0.2 -- parameter for mutation operator (ratio of replaced letters)
+                    0.8 -- crossover rate (% of entities by crossover)
+                    0.2 -- mutation rate (% of entities by mutation)
+                    0.0 -- parameter for crossover (not used here)
+                    0.2 -- parameter for mutation (% of replaced letters)
                     False -- whether or not to use checkpointing
                     False -- don't rescore archive in each generation
 
             g = mkStdGen 0 -- random generator
 
         -- Do the evolution!
-        -- two last parameters (pool for generating new entities and extra data to score an entity) are unused in this example
+        -- two last parameters (pool for generating new entities and 
+        -- extra data to score an entity) are unused in this example
             (Identity es) = evolve g cfg () ()
             e = snd $ head es :: Int
         

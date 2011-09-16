@@ -47,16 +47,17 @@ instance Entity Sentence Double Target [Letter] IO where
       e = zipWith (!!) cps picks
 
   -- mutation operator: use next or previous letter randomly and add random characters (max. 9)
-  mutation pool p seed e = return $ Just $ (zipWith replace tweaks e) ++ addChars
+  mutation pool p seed e = return $ Just $ (zipWith replace tweaks e) 
+                                         ++ addChars
     where
       g = mkStdGen seed
       k = round (1 / p) :: Int
       tweaks = randoms g :: [Int]
       replace i x = if (i `mod` k) == 0
-                       then if even i
-                               then if x > (minBound :: Char) then pred x else succ x
-                               else if x < (maxBound :: Char) then succ x else pred x
-                       else x
+        then if even i
+          then if x > (minBound :: Char) then pred x else succ x
+          else if x < (maxBound :: Char) then succ x else pred x
+        else x
       is = map (flip mod $ length pool) $ randoms g
       addChars = take (seed `mod` 10) $ map ((!!) pool) is
 
@@ -80,10 +81,10 @@ main = do
                     100 -- population size
                     25 -- archive size (best entities to keep track of)
                     300 -- maximum number of generations
-                    0.8 -- crossover rate (% of new entities generated with crossover)
-                    0.2 -- mutation rate (% of new entities generated with mutation)
-                    0.0 -- parameter for crossover operator (not used here)
-                    0.2 -- parameter for mutation operator (ratio of replaced letters)
+                    0.8 -- crossover rate (% of entities by crossover)
+                    0.2 -- mutation rate (% of entities by mutation)
+                    0.0 -- parameter for crossover (not used here)
+                    0.2 -- parameter for mutation (% of replaced letters)
                     False -- whether or not to use checkpointing
                     False -- don't rescore archive in each generation
 
