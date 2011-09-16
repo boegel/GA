@@ -9,7 +9,8 @@
 module GA (Entity(..), 
            GAConfig(..), 
            evolve, 
-           evolveVerbose) where
+           evolveVerbose,
+           randomSearch) where
 
 import Control.Monad (zipWithM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -17,7 +18,7 @@ import Data.List (sortBy, nub)
 import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Ord (comparing)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.Random (StdGen, mkStdGen, randoms)
+import System.Random (StdGen, mkStdGen, random, randoms)
 
 -- |Currify a list of elements into tuples.
 currify :: [a] -- ^ list
@@ -110,7 +111,6 @@ class (Eq e, Read e, Show e,
   -- |Score an entire population of entites (default definition).
   --
   -- Default implementation returns Nothing for all entities.
-  -- FIXME: just return Nothing, not a list of Nothings
   scorePop :: d -- ^ dataset to score entities
            -> [e] -- ^ universe of known entities
            -> [e] -- ^ population of entities to score
@@ -224,7 +224,6 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) universe (pop,archive) s
                         pop' = crossEnts ++ mutEnts
                         -- new archive: best entities so far
                         archive' = take an $ nub $ sortBy (comparing fst) $ combo
-                        -- FIXME: construct new universe
                         universe' = nub $ universe ++ scoredPop
                     return (universe', (pop',archive'))
 
@@ -360,10 +359,10 @@ restoreFromCheckpoint _ [] = return Nothing
 
 -- |Do the evolution (support checkpointing). Requires support for liftIO in monad used.
 evolveVerbose :: (Entity e s d p m, MonadIO m) => StdGen -- ^ random generator
-                                             -> GAConfig -- ^ configuration for genetic algorithm
-                                             -> p -- ^ pool for generating random entities (and also for crossover/mutation)
-                                             -> d -- ^ dataset required to score entities
-                                             -> m [ScoredEntity e s] -- ^ result is list of best entities, with scores
+                                               -> GAConfig -- ^ configuration for genetic algorithm
+                                               -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                                               -> d -- ^ dataset required to score entities
+                                               -> m [ScoredEntity e s] -- ^ result is list of best entities, with scores
 evolveVerbose g cfg pool dataset = do
                                    -- initialize
                                    (pop, cCnt, mCnt, aSize, crossPar, mutPar, genSeeds) <- initGA g cfg pool
@@ -387,4 +386,20 @@ evolveVerbose g cfg pool dataset = do
                                    -- return best entity 
                                    return resArchive
 
--- FIXME: implement random search
+-- |Random search.
+--
+-- Useful to compare with results from genetic algorithm.
+randomSearch :: (Entity e s d p m) => StdGen -- ^ random generator
+                                   -> Int -- ^ number of random entities
+                                   -> p -- ^ pool for generating random entities (and also for crossover/mutation)
+                                   -> d -- ^ dataset required to score entities
+                                   -> m [ScoredEntity e s] -- ^ result is list of best entities, with scores
+randomSearch g n pool dataset = do
+    let seed = fst $ random g :: Int
+    es <- initPop pool n seed
+    scores <- scorePop dataset [] es
+    scores' <- case scores of
+      (Just ss) -> return ss
+      -- score one by one if scorePop failed
+      Nothing   -> mapM (score dataset) es
+    return $ zip scores' es
