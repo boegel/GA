@@ -52,7 +52,9 @@ data GAConfig = GAConfig {
                 -- |parameter for mutation (semantics depend on actual mutation operator)
                 mutationParam :: Float, 
                 -- |enable/disable built-in checkpointing mechanism
-                withCheckpointing :: Bool 
+                withCheckpointing :: Bool,
+                -- |rescore archive in each generation?
+                getRescoreArchive :: Bool
                 }
 
 -- |Type class for entities that represent a candidate solution.
@@ -128,8 +130,8 @@ type ScoredEntity e s = (Maybe s, e)
 -- |Scored generation (population and archive).
 type Generation e s = ([e],[ScoredEntity e s])
 
--- |Universe of scored entities.
-type Universe e s = [ScoredEntity e s]
+-- |Universe of entities.
+type Universe e = [e]
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e s d p m) => p -- ^ pool for generating random entities
@@ -182,6 +184,18 @@ performMutation p n seed pool es = do
                                       resEntities <- zipWithM ($) (map (mutation pool p) mutSeeds) $ map (tournamentSelection es) selSeeds
                                       return $ take n $ catMaybes $ resEntities
 
+-- |Score a list of entities.
+scoreAll :: (Entity e s d p m) => d -- ^ dataset for scoring entities
+                               -> [e] -- ^ universe of known entities
+                               -> [e] -- ^ set of entities to score
+                               -> m [Maybe s]
+scoreAll dataset univEnts ents = do
+  scores <- scorePop dataset univEnts ents
+  case scores of
+    (Just ss) -> return ss
+    -- score one by one if scorePop failed
+    Nothing   -> mapM (score dataset) ents
+ 
 -- |Function to perform a single evolution step:
 --
 -- * score all entities in the population
@@ -197,23 +211,25 @@ evolutionStep :: (Entity e s d p m) => p -- ^ pool for crossover/mutation
                                   -> d -- ^ dataset for scoring entities
                                   -> (Int,Int,Int) -- ^ number of crossover/mutation/archive entities
                                   -> (Float,Float) -- ^ crossover/mutation parameters
-                                  -> Universe e s -- ^ universe of known entities
+                                  -> Bool -- ^ rescore archive in each step?
+                                  -> Universe e -- ^ universe of known entities
                                   -> Generation e s -- ^ current generation
                                   -> Int -- ^ seed for next generation
-                                  -> m (Universe e s, Generation e s) -- ^ next generation
-evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) universe (pop,archive) seed = do 
+                                  -> m (Universe e, Generation e s) -- ^ next generation
+evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) rescoreArchive universe (pop,archive) seed = do 
                     -- score population
                     -- try to score in a single go first
-                    let univEnts = map snd universe
-                    scores <- scorePop dataset univEnts pop
-                    scores' <- case scores of
-                                 (Just ss) -> return ss
-                                 -- score one by one if scorePop failed
-                                 Nothing   -> mapM (score dataset) pop
+                    scores <- scoreAll dataset universe pop
+                    archive' <- if rescoreArchive
+                                   then return archive
+                                   else do
+                                          let as = map snd archive
+                                          scores' <- scoreAll dataset universe as
+                                          return $ zip scores' as
                     let 
-                        scoredPop = zip scores' pop
+                        scoredPop = zip scores pop
                         -- combine with archive for selection
-                        combo = scoredPop ++ archive
+                        combo = scoredPop ++ archive'
                         -- split seeds for crossover selection/seeds, mutation selection/seeds
                         g = mkStdGen seed
                         [crossSeed,mutSeed] = take 2 $ randoms g
@@ -221,17 +237,17 @@ evolutionStep pool dataset (cn,mn,an) (crossPar,mutPar) universe (pop,archive) s
                     crossEnts <- performCrossover crossPar cn crossSeed pool combo
                     mutEnts <- performMutation mutPar mn mutSeed pool combo
                     let -- new population: crossovered + mutated entities
-                        pop' = crossEnts ++ mutEnts
+                        newPop = crossEnts ++ mutEnts
                         -- new archive: best entities so far
-                        archive' = take an $ nub $ sortBy (comparing fst) $ combo
-                        universe' = nub $ universe ++ scoredPop
-                    return (universe', (pop',archive'))
+                        newArchive = take an $ nub $ sortBy (comparing fst) $ combo
+                        newUniverse = nub $ universe ++ pop
+                    return (newUniverse, (newPop,newArchive))
 
 -- |Evolution: evaluate generation and continue.
 evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for the genetic algorithm
-                                -> Universe e s -- ^ list of all known entities 
+                                -> Universe e -- ^ list of all known entities 
                                 -> Generation e s -- ^ current generation
-                                -> (Universe e s -> Generation e s -> Int -> m (Universe e s, Generation e s)) -- actual evolution function, which evolves one generation
+                                -> (Universe e -> Generation e s -> Int -> m (Universe e, Generation e s)) -- actual evolution function, which evolves one generation
                                 -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
                                 -> m (Generation e s) -- ^ resulting generation
 evolution cfg universe gen step ((_,seed):gss) = do
@@ -271,9 +287,9 @@ checkpointGen cfg index seed (pop,archive) = do
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
 evolutionChkpt :: (Entity e s d p m, MonadIO m) => GAConfig -- ^ configuration for genetic algorithm
-                                              -> Universe e s -- ^ universe of known entities
+                                              -> Universe e -- ^ universe of known entities
                                               -> Generation e s -- ^ current generation
-                                              -> (Universe e s -> Generation e s -> Int -> m (Universe e s, Generation e s)) -- ^ actual evolution function, which evolves one generation
+                                              -> (Universe e -> Generation e s -> Int -> m (Universe e, Generation e s)) -- ^ actual evolution function, which evolves one generation
                                               -> [(Int,Int)] -- ^ generation indicies and accompanying random seeds
                                               -> m (Generation e s) -- ^ resulting generation
 evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
@@ -336,7 +352,8 @@ evolve g cfg pool dataset = do
                                                                            then initGA g cfg pool
                                                                            else error "(evolve) No checkpointing support (requires liftIO); see evolveVerbose."
                 -- do the evolution
-                (_,resArchive) <- evolution cfg [] (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds
+                let rescoreArchive = getRescoreArchive cfg
+                (_,resArchive) <- evolution cfg [] (pop,[]) (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar) rescoreArchive) genSeeds
                 
                
                 -- return best entity
@@ -380,8 +397,9 @@ evolveVerbose g cfg pool dataset = do
                                           else (-1, (pop, []))
                                        -- filter out seeds from past generations
                                        genSeeds' = filter ((>gi) . fst) genSeeds
+                                       rescoreArchive = getRescoreArchive cfg
                                    -- do the evolution
-                                   (_,resArchive) <- evolutionChkpt cfg [] gen (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar)) genSeeds'
+                                   (_,resArchive) <- evolutionChkpt cfg [] gen (evolutionStep pool dataset (cCnt,mCnt,aSize) (crossPar,mutPar) rescoreArchive) genSeeds'
                
                                    -- return best entity 
                                    return resArchive
@@ -397,9 +415,5 @@ randomSearch :: (Entity e s d p m) => StdGen -- ^ random generator
 randomSearch g n pool dataset = do
     let seed = fst $ random g :: Int
     es <- initPop pool n seed
-    scores <- scorePop dataset [] es
-    scores' <- case scores of
-      (Just ss) -> return ss
-      -- score one by one if scorePop failed
-      Nothing   -> mapM (score dataset) es
-    return $ zip scores' es
+    scores <- scoreAll dataset [] es
+    return $ zip scores es

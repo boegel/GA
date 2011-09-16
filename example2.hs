@@ -82,6 +82,7 @@ main = do
                     0.0 -- parameter for crossover operator (not used here)
                     0.2 -- parameter for mutation operator (ratio of replaced letters)
                     False -- whether or not to use checkpointing
+                    False -- don't rescore archive in each generation
 
             g = mkStdGen 0 -- random generator
 
