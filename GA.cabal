@@ -23,14 +23,18 @@ Description:
   Checkpointing in between generations is available, as is automatic
   restoring from the last available checkpoint. 
   
-Extra-source-files:  example1.hs, example2.hs, Makefile
+Extra-source-files:  examples/example1.hs, 
+                     examples/example2.hs, 
+                     examples/example3.hs, 
+                     Makefile
 Tested-with:         GHC==6.12.1
 
 Library
   exposed-modules:     GA
   extensions:          FunctionalDependencies, MultiParamTypeClasses
   ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5, directory, random
+  build-depends:       base >= 4 && < 5, directory, 
+                       random, transformers
 
 source-repository head
   type: git

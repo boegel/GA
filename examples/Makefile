@@ -1,6 +1,6 @@
 all: example1 example2 example3
 
-%: GA.hs %.hs
+%: %.hs
 	ghc --make -Wall $@
 
 clean:

@@ -9,9 +9,13 @@ v0.1 (Aug. 31st 2011):
 	- checkpointing between generations with automatic restore from checkpoint
 * two toy examples
 
-v0.2 ():
+v0.2 (Sept. 19th 2011):
 
 * fixed compilation warnings in GA module and examples
-* generalized result type of evolve from IO a to Monad m => m a
-* introduced evolveChkpt which allows checkpointing, and prints
+* major API changes
+  - generalized result type of evolve from IO a to Monad m => m a
+  - hist genRandom, crossover, mutation adn scores into genertic Monad m
+* introduced evolveVerbose which allows checkpointing, and prints
   progress to stdout (requires liftIO)
+* implemented random search
+* code cleanup and reorganization

@@ -1,7 +1,7 @@
 GA, a Haskell library for working with genetic algorithms
 ---------------------------------------------------------
 
-version 0.2, Sept. 2011, written by Kenneth Hoste (kenneth.hsote@gmail.com)
+version 0.2, Sept. 2011, written by Kenneth Hoste (kenneth.hoste@gmail.com)
 see http://hackage.haskell.org/package/GA
 
 * DESCRIPTION
@@ -21,7 +21,8 @@ restoring from the last available checkpoint (see evolveChkpt).
 
 * BUILDING AND USING
 
-Building the GA module and supplied examples can be done by running 'make'.
+Building the supplied examples can be done by running 'make'
+in the examples directory after the installation of the GA library.
 
 Using the GA module should be clear after studying the examples.
 
@@ -35,18 +36,14 @@ which is of course not representative of a real world problem that could
 be solved using genetic algorithms. However, it does serve well as a toy 
 example.
 
-The code in example1.hs illustrates how you can define the 'genRandom', 
-'crossover', 'mutation' and 'score' functions that are required to run 
+The code in example1.hs illustrates how you can define the "genRandom", 
+"crossover", "mutation" and "score'" functions that are required to run 
 the genetic algorithm using the 'evolve' function.
 
 It also shows the use of a 'pool' that can be used to generate random
 entities (a list of characters, in this particular case), and user-supplied
 data that can be used to evaluate the fitness of entities (in this case,
 the string "Hello World!").
-
-Example command line (with checkpointing enabled):
-
-	./example1 100 25 300 0.8 0.2 0.0 0.2 True +RTS -M1G
 
 The second example (see example2.hs) evolves an integer number that has
 8 integer divisors, and for which the sum of its divisors equals 96.
@@ -58,6 +55,4 @@ This example shows how the pool and score data do not have to be used; it
 suffices to supply '()' as values to the evolve function, and to simply ignore
 the respective arguments passed to the Entity typeclass functions.
 
-Example command line:
-
-	./example2 20 10 100 0.8 0.2 0.0 0.2 False +RTS -M1G 
+The third example reimplements the first example, but inside the IO monad.
