@@ -138,6 +138,15 @@ class (Eq e, Read e, Show e,
                -> Bool -- ^ whether or not scored entity is perfect
   isPerfect _ = False
 
+  -- |Print progress made in this generation to stdout.
+  --
+  -- Default implementation shows best entity.
+  showProgress :: Int -> Generation e s -> String
+  showProgress gi (_,archive) = "best entity (gen. " 
+                                ++ show gi ++ "): " ++ (show e) 
+                                ++ " [fitness: " ++ show fitness ++ "]"
+    where
+      (Just fitness, e) = head archive
 
 -- |A possibly scored entity.
 type ScoredEntity e s = (Maybe s, e)
@@ -338,9 +347,8 @@ evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
     liftIO $ if (getWithCheckpointing cfg)
       then checkpointGen cfg gi seed newPa
       else return () -- skip checkpoint
-    liftIO $ putStrLn $ "best entity (gen. " 
-                     ++ show gi ++ "): " ++ (show e) 
-                     ++ " [fitness: " ++ show fitness ++ "]"
+    -- FIXME: make progress output user-definable
+    liftIO $ putStrLn $ showProgress gi newPa
     -- check for perfect entity
     if isPerfect (e, fitness)
        then do 
