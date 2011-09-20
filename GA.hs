@@ -138,7 +138,7 @@ class (Eq e, Read e, Show e,
                -> Bool -- ^ whether or not scored entity is perfect
   isPerfect _ = False
 
-  -- |Print progress made in this generation to stdout.
+  -- |Show progress made in this generation.
   --
   -- Default implementation shows best entity.
   showProgress :: Int -> Generation e s -> String
