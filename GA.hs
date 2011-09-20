@@ -347,7 +347,6 @@ evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
     liftIO $ if (getWithCheckpointing cfg)
       then checkpointGen cfg gi seed newPa
       else return () -- skip checkpoint
-    -- FIXME: make progress output user-definable
     liftIO $ putStrLn $ showProgress gi newPa
     -- check for perfect entity
     if isPerfect (e, fitness)
