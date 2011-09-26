@@ -64,12 +64,13 @@ instance Entity Sentence Double Target [Letter] IO where
   -- score: distance between current string and target
   -- sum of 'distances' between letters, large penalty for additional/short letters
   -- NOTE: lower is better
-  score x e = return $ Just $ fromIntegral $ d + 100*l
-    where
-      e' = map ord e
-      x' = map ord x
-      d = sum' $ map abs $ zipWith (-) e' x'
-      l = abs $ (length x) - (length e)
+  score fn e = do
+    x <- readFile fn
+    let e' = length e `seq` map ord e
+        x' = map ord x
+        d = sum' $ map abs $ zipWith (-) e' x'
+        l = abs $ (length x) - (length e)
+    return $ Just $ fromIntegral $ d + 100*l
 
   -- whether or not a scored entity is perfect
   isPerfect (_,s) = s == 0.0
@@ -90,11 +91,18 @@ main = do
 
             g = mkStdGen 0 -- random generator
 
-            -- pool of characters to pick from
+            -- pool of characters to pick from: printable ASCII characters
             charsPool = map chr [32..126]
+
+            fileName = "goal.txt"
+
+        -- write string to file, pretend that we don't know what it is
+        -- goal is to let genetic algorithm evolve this string
+        writeFile fileName "Hello World!"
+
         -- Do the evolution!
         -- Note: if either of the last two arguments is unused, just use () as a value
-        es <- evolveVerbose g cfg charsPool "Hello World!"
+        es <- evolveVerbose g cfg charsPool fileName
         let e = snd $ head es :: String
         
         putStrLn $ "best entity: " ++ (show e)
