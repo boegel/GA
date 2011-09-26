@@ -14,7 +14,7 @@ module GA (Entity(..),
 
 import Control.Monad (zipWithM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.List (sortBy, nub)
+import Data.List (sortBy, nub, nubBy)
 import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Ord (comparing)
 import System.Directory (createDirectoryIfMissing, doesFileExist)
@@ -76,7 +76,7 @@ data GAConfig = GAConfig {
 -- Minimal implementation includes genRandom, crossover, mutation, 
 -- and either score', score or scorePop.
 --
-class (Eq e, Read e, Show e, 
+class (Eq e, Ord e, Read e, Show e, 
        Ord s, Read s, Show s, 
        Monad m)
    => Entity e s d p m 
@@ -147,6 +147,15 @@ class (Eq e, Read e, Show e,
                                 ++ " [fitness: " ++ show fitness ++ "]"
     where
       (Just fitness, e) = head archive
+
+  -- |Determine whether evolution should continue or not, 
+  --  based on lists of archive fitnesses of previous generations.
+  --
+  --  Note: last archives are at the head of the list.
+  --
+  --  Default implementation always returns True.
+  mustContinue :: [[(ScoredEntity e s)]] -> Bool
+  mustContinue _ = True
 
 -- |A possibly scored entity.
 type ScoredEntity e s = (Maybe s, e)
@@ -274,13 +283,16 @@ evolutionStep pool
     let -- new population: crossovered + mutated entities
         newPop = crossEnts ++ mutEnts
         -- new archive: best entities so far
-        newArchive = take an $ nub $ sortBy (comparing fst) $ combo
+        newArchive = take an 
+                   $ nubBy (\x y -> comparing snd x y == EQ) 
+                   $ sortBy (comparing fst) combo
         newUniverse = nub $ universe ++ pop
     return (newUniverse, (newPop,newArchive))
 
 -- |Evolution: evaluate generation and continue.
 evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for GA
                                 -> Universe e -- ^ known entities 
+                                -> [[ScoredEntity e s]] -- ^ previous archives
                                 -> Generation e s -- ^ current generation
                                 -> (   Universe e
                                     -> Generation e s 
@@ -289,14 +301,15 @@ evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for GA
                                    ) -- ^ function that evolves a generation
                                 -> [(Int,Int)] -- ^ gen indicies and seeds
                                 -> m (Generation e s) -- ^evolved generation
-evolution cfg universe gen step ((_,seed):gss) = do
+evolution cfg universe pastArchives gen step ((_,seed):gss) = do
     (universe',nextGen) <- step universe gen seed 
     let (Just fitness, e) = (head $ snd nextGen)
-    if isPerfect (e,fitness)
+        newArchive = snd nextGen
+    if not (mustContinue pastArchives) || isPerfect (e,fitness)
       then return nextGen
-      else evolution cfg universe' nextGen step gss
+      else evolution cfg universe' (newArchive:pastArchives) nextGen step gss
 -- no more gen. indices/seeds => quit
-evolution _ _ gen _              []    = return gen
+evolution _ _ _ gen _ [] = return gen
 
 -- |Generate file name for checkpoint.
 chkptFileName :: GAConfig -- ^ configuration for generation algorithm
@@ -332,6 +345,7 @@ checkpointGen cfg index seed (pop,archive) = do
 evolutionChkpt :: (Entity e s d p m, 
                    MonadIO m) => GAConfig -- ^ configuration for GA
                               -> Universe e -- ^ universe of known entities
+                              -> [[ScoredEntity e s]] -- ^ previous archives
                               -> Generation e s -- ^ current generation
                               -> (   Universe e 
                                   -> Generation e s 
@@ -340,7 +354,7 @@ evolutionChkpt :: (Entity e s d p m,
                                  ) -- ^ function that evolves a generation
                               -> [(Int,Int)] -- ^ gen indicies and seeds
                               -> m (Generation e s) -- ^ evolved generation
-evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
+evolutionChkpt cfg universe pastArchives gen step ((gi,seed):gss) = do
     (universe',newPa@(_,archive')) <- step universe gen seed
     let (Just fitness, e) = head archive'
     -- checkpoint generation if desired
@@ -349,16 +363,20 @@ evolutionChkpt cfg universe gen step ((gi,seed):gss) = do
       else return () -- skip checkpoint
     liftIO $ putStrLn $ showProgress gi newPa
     -- check for perfect entity
-    if isPerfect (e, fitness)
+    if not (mustContinue pastArchives) || isPerfect (e,fitness)
        then do 
-               liftIO $ putStrLn $ "perfect entity found, "
-                                ++ "finished after " ++ show gi 
-                                ++ " generations!"
+               liftIO $ putStrLn $ if isPerfect (e,fitness)
+                                     then    "perfect entity found, "
+                                          ++ "finished after " ++ show gi 
+                                          ++ " generations!"
+                                     else    "no progress for 3 generations, "
+                                          ++ "stopping after " ++ show gi
+                                          ++ " generations!"
                return newPa
-       else evolutionChkpt cfg universe' newPa step gss
+       else evolutionChkpt cfg universe' (archive':pastArchives) newPa step gss
 
 -- no more gen. indices/seeds => quit
-evolutionChkpt _ _ gen _ [] = do 
+evolutionChkpt _ _ _ gen _ [] = do 
     liftIO $ putStrLn $ "done evolving!"
     return gen
 
@@ -405,7 +423,7 @@ evolve g cfg pool dataset = do
     -- do the evolution
     let rescoreArchive = getRescoreArchive cfg
     (_,resArchive) <- evolution 
-                       cfg [] (pop,[]) 
+                       cfg [] [] (pop,[]) 
                        (evolutionStep pool dataset 
                                       (cCnt,mCnt,aSize) 
                                       (crossPar,mutPar) 
@@ -460,7 +478,7 @@ evolveVerbose g cfg pool dataset = do
         rescoreArchive = getRescoreArchive cfg
     -- do the evolution
     (_,resArchive) <- evolutionChkpt 
-                        cfg [] gen 
+                        cfg [] [] gen 
                         (evolutionStep pool dataset 
                                        (cCnt,mCnt,aSize) 
                                        (crossPar,mutPar) 
