@@ -342,7 +342,7 @@ checkpointGen cfg index seed (pop,archive) = do
     writeFile fn txt
 
 -- |Evolution: evaluate generation, (maybe) checkpoint, continue.
-evolutionChkpt :: (Entity e s d p m, 
+evolutionVerbose :: (Entity e s d p m, 
                    MonadIO m) => GAConfig -- ^ configuration for GA
                               -> Universe e -- ^ universe of known entities
                               -> [[ScoredEntity e s]] -- ^ previous archives
@@ -354,7 +354,7 @@ evolutionChkpt :: (Entity e s d p m,
                                  ) -- ^ function that evolves a generation
                               -> [(Int,Int)] -- ^ gen indicies and seeds
                               -> m (Generation e s) -- ^ evolved generation
-evolutionChkpt cfg universe pastArchives gen step ((gi,seed):gss) = do
+evolutionVerbose cfg universe pastArchives gen step ((gi,seed):gss) = do
     (universe',newPa@(_,archive')) <- step universe gen seed
     let (Just fitness, e) = head archive'
     -- checkpoint generation if desired
@@ -373,10 +373,10 @@ evolutionChkpt cfg universe pastArchives gen step ((gi,seed):gss) = do
                                           ++ "stopping after " ++ show gi
                                           ++ " generations!"
                return newPa
-       else evolutionChkpt cfg universe' (archive':pastArchives) newPa step gss
+       else evolutionVerbose cfg universe' (archive':pastArchives) newPa step gss
 
 -- no more gen. indices/seeds => quit
-evolutionChkpt _ _ _ gen _ [] = do 
+evolutionVerbose _ _ _ gen _ [] = do 
     liftIO $ putStrLn $ "done evolving!"
     return gen
 
@@ -477,7 +477,7 @@ evolveVerbose g cfg pool dataset = do
         genSeeds' = filter ((>gi) . fst) genSeeds
         rescoreArchive = getRescoreArchive cfg
     -- do the evolution
-    (_,resArchive) <- evolutionChkpt 
+    (_,resArchive) <- evolutionVerbose 
                         cfg [] [] gen 
                         (evolutionStep pool dataset 
                                        (cCnt,mCnt,aSize) 
