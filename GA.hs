@@ -1,12 +1,155 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
--- |GA, a Haskell library for working with genetic algoritms
+-- | GA, a Haskell library for working with genetic algoritms.
 --
 -- Aug. 2011 - Sept. 2011, by Kenneth Hoste
 --
--- version: 0.3
-module GA (Entity(..), 
+-- version: 1.0
+--
+-- Major features:
+--
+--  * flexible user-friendly API for working with genetic algorithms
+--
+--  * Entity type class to let user define entity definition, scoring, etc.
+--
+--  * abstraction over monad, resulting in a powerful yet simple interface
+--
+--  * support for scoring entire population at once
+--
+--  * support for checkpointing each generation, 
+--    and restoring from last checkpoint
+--
+--  * convergence detection, as defined by user
+--
+--  * also available: random searching, user-defined progress output
+--
+--  * illustrative toy examples included
+--
+-- Hello world example:
+--
+-- > -- Example for GA package
+-- > -- see http://hackage.haskell.org/package/GA
+-- > --
+-- > -- Evolve the string "Hello World!"
+-- >
+-- >{-# LANGUAGE FlexibleInstances #-}
+-- >{-# LANGUAGE MultiParamTypeClasses #-}
+-- >{-# LANGUAGE TypeSynonymInstances #-}
+-- >
+-- >import Data.Char (chr,ord)
+-- >import Data.List (foldl')
+-- >import System.Random (mkStdGen, random, randoms)
+-- >import System.IO(IOMode(..), hClose, hGetContents, openFile)
+-- >
+-- >import GA (Entity(..), GAConfig(..), 
+-- >           evolveVerbose, randomSearch)
+-- >
+-- >-- efficient sum
+-- >sum' :: (Num a) => [a] -> a
+-- >sum' = foldl' (+) 0
+-- >
+-- >--
+-- >-- GA TYPE CLASS IMPLEMENTATION
+-- >--
+-- >
+-- >type Sentence = String
+-- >type Target = String
+-- >type Letter = Char
+-- >
+-- >instance Entity Sentence Double Target [Letter] IO where
+-- > 
+-- >  -- generate a random entity, i.e. a random string
+-- >  -- assumption: max. 100 chars, only 'printable' ASCII (first 128)
+-- >  genRandom pool seed = return $ take n $ map ((!!) pool) is
+-- >    where
+-- >        g = mkStdGen seed
+-- >        n = (fst $ random g) `mod` 101
+-- >        k = length pool
+-- >        is = map (flip mod k) $ randoms g
+-- >
+-- >  -- crossover operator: mix (and trim to shortest entity)
+-- >  crossover _ _ seed e1 e2 = return $ Just e
+-- >    where
+-- >      g = mkStdGen seed
+-- >      cps = zipWith (\x y -> [x,y]) e1 e2
+-- >      picks = map (flip mod 2) $ randoms g
+-- >      e = zipWith (!!) cps picks
+-- >
+-- >  -- mutation operator: use next or previous letter randomly and add random characters (max. 9)
+-- >  mutation pool p seed e = return $ Just $ (zipWith replace tweaks e) 
+-- >                                         ++ addChars
+-- >    where
+-- >      g = mkStdGen seed
+-- >      k = round (1 / p) :: Int
+-- >      tweaks = randoms g :: [Int]
+-- >      replace i x = if (i `mod` k) == 0
+-- >        then if even i
+-- >          then if x > (minBound :: Char) then pred x else succ x
+-- >          else if x < (maxBound :: Char) then succ x else pred x
+-- >        else x
+-- >      is = map (flip mod $ length pool) $ randoms g
+-- >      addChars = take (seed `mod` 10) $ map ((!!) pool) is
+-- >
+-- >  -- score: distance between current string and target
+-- >  -- sum of 'distances' between letters, large penalty for additional/short letters
+-- >  -- NOTE: lower is better
+-- >  score fn e = do
+-- >    h <- openFile fn ReadMode
+-- >    x <- hGetContents h
+-- >    length x `seq` hClose h
+-- >    let e' = map ord e
+-- >        x' = map ord x
+-- >        d = sum' $ map abs $ zipWith (-) e' x'
+-- >        l = abs $ (length x) - (length e)
+-- >    return $ Just $ fromIntegral $ d + 100*l
+-- >
+-- >  -- whether or not a scored entity is perfect
+-- >  isPerfect (_,s) = s == 0.0
+-- >
+-- >
+-- >main :: IO() 
+-- >main = do
+-- >        let cfg = GAConfig 
+-- >                    100 -- population size
+-- >                    25 -- archive size (best entities to keep track of)
+-- >                    300 -- maximum number of generations
+-- >                    0.8 -- crossover rate (% of entities by crossover)
+-- >                    0.2 -- mutation rate (% of entities by mutation)
+-- >                    0.0 -- parameter for crossover (not used here)
+-- >                    0.2 -- parameter for mutation (% of replaced letters)
+-- >                    False -- whether or not to use checkpointing
+-- >                    False -- don't rescore archive in each generation
+-- >
+-- >            g = mkStdGen 0 -- random generator
+-- >
+-- >            -- pool of characters to pick from: printable ASCII characters
+-- >            charsPool = map chr [32..126]
+-- >
+-- >            fileName = "goal.txt"
+-- >
+-- >        -- write string to file, pretend that we don't know what it is
+-- >        -- goal is to let genetic algorithm evolve this string
+-- >        writeFile fileName "Hello World!"
+-- >
+-- >        -- Do the evolution!
+-- >        -- Note: if either of the last two arguments is unused, just use () as a value
+-- >        es <- evolveVerbose g cfg charsPool fileName
+-- >        let e = snd $ head es :: String
+-- >        
+-- >        putStrLn $ "best entity (GA): " ++ (show e)
+-- >
+-- >        -- Compare with random search with large budget
+-- >        -- 100k random entities, equivalent to 1000 generations of GA
+-- >        es' <- randomSearch g 100000 charsPool fileName
+-- >        let e' = snd $ head es' :: String
+-- >       
+-- >        putStrLn $ "best entity (random search): " ++ (show e')
+--
+
+module GA (Entity(..),
+           ScoredEntity, 
+           Archive, 
            GAConfig(..), 
            evolve, 
            evolveVerbose,
@@ -35,6 +178,18 @@ takeAndDrop n xs
     | n > 0     = let (hs,ts) = takeAndDrop (n-1) (tail xs) 
                    in (head xs:hs, ts)
     | otherwise = ([],xs)
+
+-- |A scored entity.
+type ScoredEntity e s = (Maybe s, e)
+
+-- |Archive of scored entities.
+type Archive e s = [ScoredEntity e s]
+
+-- |Scored generation (population and archive).
+type Generation e s = ([e], Archive e s)
+
+-- |Universe of entities.
+type Universe e = [e]
 
 -- |Configuration for genetic algorithm.
 data GAConfig = GAConfig {
@@ -73,8 +228,10 @@ data GAConfig = GAConfig {
 --
 -- * monad to operate in (m)
 --
--- Minimal implementation includes genRandom, crossover, mutation, 
--- and either score', score or scorePop.
+-- Minimal implementation should include 'genRandom', 'crossover', 'mutation', 
+-- and either 'score'', 'score' or 'scorePop'.
+--
+-- The 'isPerfect', 'showGeneration' and 'hasConverged' functions are optional.
 --
 class (Eq e, Ord e, Read e, Show e, 
        Ord s, Read s, Show s, 
@@ -141,8 +298,10 @@ class (Eq e, Ord e, Read e, Show e,
   -- |Show progress made in this generation.
   --
   -- Default implementation shows best entity.
-  showProgress :: Int -> Generation e s -> String
-  showProgress gi (_,archive) = "best entity (gen. " 
+  showGeneration :: Int -- ^ generation index
+               -> Generation e s -- ^ generation (population and archive)
+               -> String -- ^ string describing this generation
+  showGeneration gi (_,archive) = "best entity (gen. " 
                                 ++ show gi ++ "): " ++ (show e) 
                                 ++ " [fitness: " ++ show fitness ++ "]"
     where
@@ -151,20 +310,12 @@ class (Eq e, Ord e, Read e, Show e,
   -- |Determine whether evolution should continue or not, 
   --  based on lists of archive fitnesses of previous generations.
   --
-  --  Note: last archives are at the head of the list.
+  --  Note: most recent archives are at the head of the list.
   --
-  --  Default implementation always returns True.
-  mustContinue :: [[(ScoredEntity e s)]] -> Bool
-  mustContinue _ = True
-
--- |A possibly scored entity.
-type ScoredEntity e s = (Maybe s, e)
-
--- |Scored generation (population and archive).
-type Generation e s = ([e],[ScoredEntity e s])
-
--- |Universe of entities.
-type Universe e = [e]
+  --  Default implementation always returns False.
+  hasConverged :: [Archive e s] -- ^ archives so far
+               -> Bool -- ^ whether or not convergence was detected
+  hasConverged _ = False
 
 -- |Initialize: generate initial population.
 initPop :: (Entity e s d p m) => p -- ^ pool for generating random entities
@@ -292,7 +443,7 @@ evolutionStep pool
 -- |Evolution: evaluate generation and continue.
 evolution :: (Entity e s d p m) => GAConfig -- ^ configuration for GA
                                 -> Universe e -- ^ known entities 
-                                -> [[ScoredEntity e s]] -- ^ previous archives
+                                -> [Archive e s] -- ^ previous archives
                                 -> Generation e s -- ^ current generation
                                 -> (   Universe e
                                     -> Generation e s 
@@ -305,7 +456,7 @@ evolution cfg universe pastArchives gen step ((_,seed):gss) = do
     (universe',nextGen) <- step universe gen seed 
     let (Just fitness, e) = (head $ snd nextGen)
         newArchive = snd nextGen
-    if not (mustContinue pastArchives) || isPerfect (e,fitness)
+    if hasConverged pastArchives || isPerfect (e,fitness)
       then return nextGen
       else evolution cfg universe' (newArchive:pastArchives) nextGen step gss
 -- no more gen. indices/seeds => quit
@@ -329,10 +480,10 @@ chkptFileName cfg (gi,seed) = "checkpoints/GA-"
 
 -- |Checkpoint a single generation.
 checkpointGen :: (Entity e s d p m) => GAConfig -- ^ configuraton for GA
-                                  -> Int -- ^ generation index
-                                  -> Int -- ^ random seed for generation
-                                  -> Generation e s -- ^ current generation
-                                  -> IO() -- ^ writes to file
+                                    -> Int -- ^ generation index
+                                    -> Int -- ^ random seed for generation
+                                    -> Generation e s -- ^ current generation
+                                    -> IO() -- ^ writes to file
 checkpointGen cfg index seed (pop,archive) = do
     let txt = show $ (pop,archive)
         fn = chkptFileName cfg (index,seed)
@@ -345,7 +496,7 @@ checkpointGen cfg index seed (pop,archive) = do
 evolutionVerbose :: (Entity e s d p m, 
                    MonadIO m) => GAConfig -- ^ configuration for GA
                               -> Universe e -- ^ universe of known entities
-                              -> [[ScoredEntity e s]] -- ^ previous archives
+                              -> [Archive e s] -- ^ previous archives
                               -> Generation e s -- ^ current generation
                               -> (   Universe e 
                                   -> Generation e s 
@@ -361,9 +512,9 @@ evolutionVerbose cfg universe pastArchives gen step ((gi,seed):gss) = do
     liftIO $ if (getWithCheckpointing cfg)
       then checkpointGen cfg gi seed newPa
       else return () -- skip checkpoint
-    liftIO $ putStrLn $ showProgress gi newPa
+    liftIO $ putStrLn $ showGeneration gi newPa
     -- check for perfect entity
-    if not (mustContinue pastArchives) || isPerfect (e,fitness)
+    if hasConverged pastArchives || isPerfect (e,fitness)
        then do 
                liftIO $ putStrLn $ if isPerfect (e,fitness)
                                      then    "perfect entity found, "
@@ -412,7 +563,7 @@ evolve :: (Entity e s d p m) => StdGen -- ^ random generator
                              -> GAConfig -- ^ configuration for GA
                              -> p -- ^ random entities pool
                              -> d -- ^ dataset required to score entities
-                             -> m [ScoredEntity e s] -- ^ best entities
+                             -> m (Archive e s) -- ^ best entities
 evolve g cfg pool dataset = do
     -- initialize
     (pop, cCnt, mCnt, aSize, 
@@ -450,15 +601,17 @@ restoreFromChkpt cfg ((gi,seed):genSeeds) = do
     fn = chkptFileName cfg (gi,seed)
 restoreFromChkpt _ [] = return Nothing
 
--- |Do the evolution (supports checkpointing). 
+-- |Do the evolution, verbosely.
 --
--- Requires support for liftIO in monad used.
-evolveVerbose :: (Entity e s d p m, 
-                  MonadIO m) => StdGen -- ^ random generator
+-- Prints progress to stdout, and supports checkpointing. 
+--
+-- Note: requires support for liftIO in monad used.
+evolveVerbose :: (Entity e s d p m, MonadIO m) 
+                             => StdGen -- ^ random generator
                              -> GAConfig -- ^ configuration for GA
                              -> p -- ^ random entities pool
                              -> d -- ^ dataset required to score entities
-                             -> m [ScoredEntity e s] -- ^ best entities
+                             -> m (Archive e s) -- ^ best entities
 evolveVerbose g cfg pool dataset = do
     -- initialize
     (pop, cCnt, mCnt, aSize, 
@@ -487,16 +640,18 @@ evolveVerbose g cfg pool dataset = do
     -- return best entity 
     return resArchive
 
--- |Random search.
+-- |Random searching.
 --
 -- Useful to compare with results from genetic algorithm.
 randomSearch :: (Entity e s d p m) => StdGen -- ^ random generator
                                    -> Int -- ^ number of random entities
                                    -> p -- ^ random entity pool
                                    -> d -- ^ scoring dataset
-                                   -> m [ScoredEntity e s] -- ^ best ents
+                                   -> m (Archive e s) -- ^ scored entities (sorted)
 randomSearch g n pool dataset = do
     let seed = fst $ random g :: Int
     es <- initPop pool n seed
     scores <- scoreAll dataset [] es
-    return $ zip scores es
+    return $ nubBy (\x y -> comparing snd x y == EQ) 
+           $ sortBy (comparing fst)
+           $ zip scores es

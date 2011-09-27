@@ -1,7 +1,7 @@
 Changelog for GA, a Haskell library for working with genetic algorithms:
 ------------------------------------------------------------------------
 
-v0.3 (Sept. 27th 2011):
+v1.0 (Sept. 27th 2011):
 
 * reorganize examples
 * minor code cleanup

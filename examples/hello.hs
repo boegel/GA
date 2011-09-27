@@ -12,8 +12,10 @@
 import Data.Char (chr,ord)
 import Data.List (foldl')
 import System.Random (mkStdGen, random, randoms)
+import System.IO(IOMode(..), hClose, hGetContents, openFile)
 
-import GA (Entity(..), GAConfig(..), evolveVerbose)
+import GA (Entity(..), GAConfig(..), 
+           evolveVerbose, randomSearch)
 
 -- efficient sum
 sum' :: (Num a) => [a] -> a
@@ -65,8 +67,10 @@ instance Entity Sentence Double Target [Letter] IO where
   -- sum of 'distances' between letters, large penalty for additional/short letters
   -- NOTE: lower is better
   score fn e = do
-    x <- readFile fn
-    let e' = length e `seq` map ord e
+    h <- openFile fn ReadMode
+    x <- hGetContents h
+    length x `seq` hClose h
+    let e' = map ord e
         x' = map ord x
         d = sum' $ map abs $ zipWith (-) e' x'
         l = abs $ (length x) - (length e)
@@ -105,4 +109,11 @@ main = do
         es <- evolveVerbose g cfg charsPool fileName
         let e = snd $ head es :: String
         
-        putStrLn $ "best entity: " ++ (show e)
+        putStrLn $ "best entity (GA): " ++ (show e)
+
+        -- Compare with random search with large budget
+        -- 100k random entities, equivalent to 1000 generations of GA
+        es' <- randomSearch g 100000 charsPool fileName
+        let e' = snd $ head es' :: String
+        
+        putStrLn $ "best entity (random search): " ++ (show e')

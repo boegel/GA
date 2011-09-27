@@ -1,7 +1,7 @@
 GA, a Haskell library for working with genetic algorithms
 ---------------------------------------------------------
 
-version 0.3, Sept. 2011, written by Kenneth Hoste (kenneth.hoste@gmail.com)
+version 1.0, Sept. 2011, written by Kenneth Hoste (kenneth.hoste@gmail.com)
 see http://hackage.haskell.org/package/GA
 
 * DESCRIPTION
@@ -61,4 +61,4 @@ user-supplied data that can be used to evaluate the fitness of entities (in
 this case, the name of the file where the target string was written to).
 
 It also shows how the GA module support operating in a monad, in this case 
-the IO monad.
+the IO monad, and illustrates the usefulness of the 'randomSearch' function.
