@@ -1,7 +1,7 @@
 GA, a Haskell library for working with genetic algorithms
 ---------------------------------------------------------
 
-version 0.2, Sept. 2011, written by Kenneth Hoste (kenneth.hoste@gmail.com)
+version 0.3, Sept. 2011, written by Kenneth Hoste (kenneth.hoste@gmail.com)
 see http://hackage.haskell.org/package/GA
 
 * DESCRIPTION
@@ -30,29 +30,35 @@ Using the GA module should be clear after studying the examples.
 
 This release includes two toy examples that show how to use the GA module.
 
-A first example evolves the string "Hello World!". The string that the
-genetic algorithm should generate is supplied by the user in this example,
-which is of course not representative of a real world problem that could 
-be solved using genetic algorithms. However, it does serve well as a toy 
-example.
-
-The code in example1.hs illustrates how you can define the "genRandom", 
-"crossover", "mutation" and "score'" functions that are required to run 
-the genetic algorithm using the 'evolve' function.
-
-It also shows the use of a 'pool' that can be used to generate random
-entities (a list of characters, in this particular case), and user-supplied
-data that can be used to evaluate the fitness of entities (in this case,
-the string "Hello World!").
-
-The second example (see example2.hs) evolves an integer number that has
+The first example (see theNumber.hs) evolves an integer number that has
 8 integer divisors, and for which the sum of its divisors equals 96.
 Although using a genetic algorithm is probably not the best way to find 
 such an integer (it would be easier/faster to just go over integer values
-one by one starting from e.g. 8), but again, it serves well as a toy example.
+one by one starting from e.g. 8), but it serves well as a toy example.
 
 This example shows how the pool and score data do not have to be used; it
 suffices to supply '()' as values to the evolve function, and to simply ignore
 the respective arguments passed to the Entity typeclass functions.
+We use the score' function in this example, because the scoring itself
+doesn't operate in a monad.
 
-The third example reimplements the first example, but inside the IO monad.
+A second example evolves the string "Hello World!". The string that the
+genetic algorithm should generate is supplied by the user in this example,
+and is printed to a file where the GA will read it from during scoring.
+This is of course not representative of a real world problem that could 
+be solved using genetic algorithms, but again, it does serve well as a toy 
+example.
+
+The code in hello.hs illustrates how you can define the "genRandom", 
+"crossover", "mutation" and "score" functions that are required to run 
+the genetic algorithm using the 'evolveVerbose' function. It also shows
+an example of defining the "isPerfect" function to determine whether a
+perfect entity was observed (and thus evolution can stop).
+
+This example demonstrates the use of a 'pool' that can be used to generate 
+random entities (a list of characters, in this particular case), and 
+user-supplied data that can be used to evaluate the fitness of entities (in 
+this case, the name of the file where the target string was written to).
+
+It also shows how the GA module support operating in a monad, in this case 
+the IO monad.

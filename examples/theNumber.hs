@@ -67,9 +67,6 @@ instance Entity Number Double () () Identity where
       s = abs $ (-) 96 $ sum' ds
       n = abs $ (-) 8 $ length ds
 
-  -- whether or not a scored entity is perfect
-  isPerfect (_,s) = s == 0.0
-
 
 main :: IO() 
 main = do

@@ -5,7 +5,7 @@
 --
 -- Aug. 2011 - Sept. 2011, by Kenneth Hoste
 --
--- version: 0.2
+-- version: 0.3
 module GA (Entity(..), 
            GAConfig(..), 
            evolve, 
