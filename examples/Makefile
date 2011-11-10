@@ -1,4 +1,4 @@
-all: theNumber hello
+all: evolveBF
 
 %: %.hs
 	ghc --make -Wall $@
